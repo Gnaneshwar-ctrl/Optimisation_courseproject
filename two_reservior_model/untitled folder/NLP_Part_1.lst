@@ -1,0 +1,2053 @@
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 1
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+C o m p i l a t i o n
+
+
+   1  SET n nodes
+   2     / Supply_1, Supply_2,
+   3       Simple_1*Simple_5,
+   4       Divert_1, Divert_2,
+   5       Res_1, Res_2, Res_3, Res_4, Res_5,
+   6       Outlet /;
+   7   
+   8  ALIAS(n,n1);
+   9   
+  10  SET
+  11  nn(n)     Simple nodes /Simple_1*Simple_5/
+  12  ns(n)     Supply nodes /Supply_1, Supply_2/
+  13  nr(n)     Water user nodes /Divert_1, Divert_2, Outlet/
+  14  nrr(n)    Irrigation nodes /Divert_1, Divert_2/
+  15  nl(n)     Reservoir nodes  /Res_1, Res_2, Res_3, Res_4, Res_5/;
+  16   
+  17   
+  18  SET n_from_n(n,n1)  node n gets water from node n1 (any node)
+  19  / Res_1.Supply_1,
+  20    Res_2.Supply_2,
+  21    Res_3.Res_1,
+  22    Res_4.Res_2,
+  23    Res_5.Res_3,
+  24    Res_5.Res_4,
+  25    Simple_1.Res_5,
+  26  *  Simple_1.Res_2,
+  27    Simple_2.Simple_1,
+  28    Divert_1.Simple_2,
+  29    Simple_3.Simple_2,
+  30    Simple_3.Divert_1,
+  31    Simple_4.Simple_3,
+  32    Divert_2.Simple_4,
+  33    Simple_5.Simple_4,
+  34    Simple_5.Divert_2,
+  35    Outlet.Simple_5 /;
+  36   
+  37  SET n_to_nr(n,n1) node n diverts water to node n1 (user node)
+  38  / Simple_2.Divert_1,
+  39    Simple_4.Divert_2,
+  40    Simple_5.Outlet /;
+  41   
+  42  SET t months /Jan1,Feb1,Mar1,Apr1,May1,Jun1,Jul1,Aug1,Sep1,Oct1,Nov1,Dec1,Jan2,Feb2,Mar2,Apr2,May2,Jun2,Jul2,Aug2,Sep2,Oct2,Nov2,Dec2/;
+  43   
+  44  PARAMETER beg_S(n) initial storage
+  45  / Res_1  1000,
+  46  Res_2 300,
+  47  Res_3 500,
+  48  Res_4 150,
+  49  Res_5 100 /;
+  50   
+  51  PARAMETER Ret(n) return flow coefficients
+  52  / Divert_1  0.5,
+  53    Divert_2  0.5,
+  54  Outlet 0.0 /;
+  55   
+  56  TABLE Supply(n,t) water supplies (m3 per sec)
+  57              Jan1     Feb1   Mar1    Apr1    May1    Jun1    Jul1    Aug1    Sep1    Oct1    Nov1    Dec1    Jan2     Feb2 Mar2   Apr2   May2    Jun2    Jul2    Aug2    Sep2    Oct2    Nov2    Dec2
+  58  Supply_1    128      125    234     360     541     645     807     512     267     210     181     128     128      125  234    360    541     645     807     512     267     210     181     128
+  59  Supply_2    39       39     52      121     168     144     105     78      49      44      45      39      39       39   52     121    168     144     105     78      49      44      45      39;
+  60   
+  61  TABLE Demand(n,t) water demands (m3 per sec)
+  62              Jan1    Feb1 Mar1   Apr1        May1        Jun1        Jul1        Aug1        Sep1        Oct1    Nov1    Dec1    Jan2    Feb2 Mar2   Apr2        May2        Jun2        Jul2        Aug2        Sep2        Oct2    Nov2    Dec2
+  63  Divert_1    0       0    0      64.5        109.8       184.4       243.7       200.9       99.5        0       0       0       0       0    0      64.5        109.8       184.4       243.7       200.9       99.5        0       0       0
+  64  Divert_2    0       0    0      13.5        15.0        22.1        26.0        24.9        13.0        0       0       0       0       0    0      13.5        15.0        22.1        26.0        24.9        13.0        0       0       0
+  65  Outlet      500     500  500    100         100         100         100         500         500         500     500     500     500     500  500    100         100         100         100         500         500         500     500     500;
+  66   
+  67  POSITIVE VARIABLES
+  68  Divert(n,t)   Diversions
+  69  Q(n,t)        Inflows
+  70  R(n,t)        Releases
+  71  S(n,t)        Storages;
+  72   
+  73  VARIABLE obj;
+  74   
+  75  * Upper bound on diversions
+  76  Divert.up(n,t) = Demand(n,t);
+  77   
+  78  * Upper bound of reservoirs
+  79  S.up('Res_1' ,t    )    = 1000;
+  80  S.up('Res_2' ,t    )    = 300;
+  81  S.up('Res_3' ,t    )    = 1000;
+  82  S.up('Res_4' ,t    )    = 300;
+  83  S.up('Res_5' ,t    )    = 500;
+  84   
+  85  * Final storage of reservoirs
+  86  S.lo('Res_1' ,'Dec2' )    = 1000;
+  87  S.lo('Res_2' ,'Dec2' )    = 300;
+  88  S.lo('Res_3' ,'Dec2' )    = 1000;
+  89  S.lo('Res_4' ,'Dec2' )    = 300;
+  90  S.lo('Res_5' ,'Dec2' )    = 500;
+  91   
+  92  EQUATIONS
+  93  R_no(n,t) Simple node
+  94  R_ns(n,t) Source node
+  95  R_nr(n,t) Irrigation node
+  96  R_nl(n,t) Reservoir node
+  97  R_nn(n,t) Simple node
+  98  Objective;
+  99   
+ 100  * Simple node:  Release = Inflow
+ 101  R_no(n,t)$(nn(n)).. R(n,t) =e= Q(n,t);
+ 102  * Source node: Release = Supply
+ 103  R_ns(n,t)$(ns(n)).. R(n,t) =e= Supply(n,t);
+ 104  * Irrigation node: Release = Return Flow = Percent of Diversion
+ 105  R_nr(n,t)$(nr(n)).. R(n,t) =e= ret(n)*Divert(n,t);
+ 106  * Reservoir node: Release = Mass Balance
+ 107  R_nl(n,t)$(nl(n)).. S(n,t) =e= beg_S(n)$(ord(t) EQ 1) + S(n,t-1)$(ord(t) GT 1) + Q(n,t)-R(n,t);
+ 108  * Simple node: Inflow = Sum of Releases from Upstream - Sum of Diversions
+ 109  R_nn(n,t).. Q(n,t) =e= sum(n1$(n_from_n(n,n1)),R(n1,t)) - sum(n1$(n_to_nr(n,n1)),Divert(n1,t));
+ 110  *Sum over Irrigation Diversions/Demands + Downstream Flow/Demand
+ 111  objective.. obj =e= sum(t,sum(n$nr(n), (Divert(n,t)/(Demand(n,t)+1e-9))));
+ 112   
+ 113  MODEL Lakes /all/;
+ 114  SOLVE Lakes USING LP MAXIMIZING obj;
+ 115   
+ 116  file res /River2.txt/
+ 117  put res;
+ 118  put "Node Divert_1 Demand_1 Divert_2 Demand_2 Outlet Demand_O"/;
+ 119  loop((t),put t.TL:6, Divert.L('Divert_1',t):9.2, Demand('Divert_1',t):9.2,Divert.L('Divert_2',t):9.2, Demand('Divert_2',t):9.2, Divert.L('Outlet',t) :9.2, Demand('Outlet',t) :9.2 /;);
+ 120  put /"Reservoirs  "/;
+ 121  put "Reservoir 1 Reservoir 2 "/;
+ 122  put "Inflow Storage Release Inflow Storage Release "/;
+ 123  put "Q-1 S-1 R-1 Q-2 S-2 R-2 "/;
+ 124  loop((t),put t.TL:8, Q.L('Res_1',t):8.1, S.L('Res_1',t):8.1, R.L('Res_1',t):8.1,Q.L('Res_2',t):8.1, S.L('Res_2',t):8.1, R.L('Res_2',t):8.1, Q.L('Res_3',t):8.1, S.L('Res_3',t):8.1, R.L('Res_3',t):8.1, Q.L('Res_4',t):8.1, S.L('Res_4',t):8.1, R.L('Res_4',t):8.1, Q.L('Res_5',t):8.1, S.L('Res_5',t):8.1, R.L('Res_5',t):8.1 /;);
+
+
+COMPILATION TIME     =        0.001 SECONDS      3 MB  45.6.0 2eadeefd DAX-DAC
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 2
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Equation Listing    SOLVE Lakes Using LP From line 114
+
+
+---- R_no  =E=  Simple node
+
+R_no(Simple_1,Jan1)..  - Q(Simple_1,Jan1) + R(Simple_1,Jan1) =E= 0 ; (LHS = 0)
+     
+R_no(Simple_1,Feb1)..  - Q(Simple_1,Feb1) + R(Simple_1,Feb1) =E= 0 ; (LHS = 0)
+     
+R_no(Simple_1,Mar1)..  - Q(Simple_1,Mar1) + R(Simple_1,Mar1) =E= 0 ; (LHS = 0)
+     
+REMAINING 117 ENTRIES SKIPPED
+
+
+---- R_ns  =E=  Source node
+
+R_ns(Supply_1,Jan1)..  R(Supply_1,Jan1) =E= 128 ; (LHS = 0, INFES = 128 ****)
+     
+R_ns(Supply_1,Feb1)..  R(Supply_1,Feb1) =E= 125 ; (LHS = 0, INFES = 125 ****)
+     
+R_ns(Supply_1,Mar1)..  R(Supply_1,Mar1) =E= 234 ; (LHS = 0, INFES = 234 ****)
+     
+REMAINING 45 ENTRIES SKIPPED
+
+
+---- R_nr  =E=  Irrigation node
+
+R_nr(Divert_1,Jan1)..  - 0.5*Divert(Divert_1,Jan1) + R(Divert_1,Jan1) =E= 0 ; (LHS = 0)
+     
+R_nr(Divert_1,Feb1)..  - 0.5*Divert(Divert_1,Feb1) + R(Divert_1,Feb1) =E= 0 ; (LHS = 0)
+     
+R_nr(Divert_1,Mar1)..  - 0.5*Divert(Divert_1,Mar1) + R(Divert_1,Mar1) =E= 0 ; (LHS = 0)
+     
+REMAINING 69 ENTRIES SKIPPED
+
+
+---- R_nl  =E=  Reservoir node
+
+R_nl(Res_1,Jan1)..  - Q(Res_1,Jan1) + R(Res_1,Jan1) + S(Res_1,Jan1) =E= 1000 ; (LHS = 0, INFES = 1000 ****)
+     
+R_nl(Res_1,Feb1)..  - Q(Res_1,Feb1) + R(Res_1,Feb1) - S(Res_1,Jan1) + S(Res_1,Feb1) =E= 0 ; (LHS = 0)
+     
+R_nl(Res_1,Mar1)..  - Q(Res_1,Mar1) + R(Res_1,Mar1) - S(Res_1,Feb1) + S(Res_1,Mar1) =E= 0 ; (LHS = 0)
+     
+REMAINING 117 ENTRIES SKIPPED
+
+
+---- R_nn  =E=  Simple node
+
+R_nn(Supply_1,Jan1)..  Q(Supply_1,Jan1) =E= 0 ; (LHS = 0)
+     
+R_nn(Supply_1,Feb1)..  Q(Supply_1,Feb1) =E= 0 ; (LHS = 0)
+     
+R_nn(Supply_1,Mar1)..  Q(Supply_1,Mar1) =E= 0 ; (LHS = 0)
+     
+REMAINING 357 ENTRIES SKIPPED
+
+
+---- Objective  =E=  
+
+Objective..  - 1000000000*Divert(Divert_1,Jan1) - 1000000000*Divert(Divert_1,Feb1) - 1000000000*Divert(Divert_1,Mar1) - 0.0155038759687519*Divert(Divert_1,Apr1) - 0.00910746812377862*Divert(Divert_1,May1) - 0.0054229934923784*Divert(Divert_1,Jun1) - 0.00410340582681944*Divert(Divert_1,Jul1) - 0.00497760079639135*Divert(Divert_1,Aug1) - 0.0100502512561804*Divert(Divert_1,Sep1) - 1000000000*Divert(Divert_1,Oct1) - 1000000000*Divert(Divert_1,Nov1) - 1000000000*Divert(Divert_1,Dec1) - 1000000000*Divert(Divert_1,Jan2) - 1000000000*Divert(Divert_1,Feb2) - 1000000000*Divert(Divert_1,Mar2) - 0.0155038759687519*Divert(Divert_1,Apr2) - 0.00910746812377862*Divert(Divert_1,May2) - 0.0054229934923784*Divert(Divert_1,Jun2) - 0.00410340582681944*Divert(Divert_1,Jul2) - 0.00497760079639135*Divert(Divert_1,Aug2) - 0.0100502512561804*Divert(Divert_1,Sep2) - 1000000000*Divert(Divert_1,Oct2) - 1000000000*Divert(Divert_1,Nov2) - 1000000000*Divert(Divert_1,Dec2) - 1000000000*Divert(Divert_2,Jan1) - 1000000000*Divert(Divert_2,Feb1) - 1000000000*Divert(Divert_2,Mar1) - 0.0740740740685871*Divert(Divert_2,Apr1) - 0.0666666666622222*Divert(Divert_2,May1) - 0.0452488687762331*Divert(Divert_2,Jun1) - 0.0384615384600592*Divert(Divert_2,Jul1) - 0.0401606425686682*Divert(Divert_2,Aug1) - 0.0769230769171598*Divert(Divert_2,Sep1) - 1000000000*Divert(Divert_2,Oct1) - 1000000000*Divert(Divert_2,Nov1) - 1000000000*Divert(Divert_2,Dec1) - 1000000000*Divert(Divert_2,Jan2) - 1000000000*Divert(Divert_2,Feb2) - 1000000000*Divert(Divert_2,Mar2) - 0.0740740740685871*Divert(Divert_2,Apr2) - 0.0666666666622222*Divert(Divert_2,May2) - 0.0452488687762331*Divert(Divert_2,Jun2) - 0.0384615384600592*Divert(Divert_2,Jul2) - 0.0401606425686682*Divert(Divert_2,Aug2) - 0.0769230769171598*Divert(Divert_2,Sep2) - 1000000000*Divert(Divert_2,Oct2) - 1000000000*Divert(Divert_2,Nov2) - 1000000000*Divert(Divert_2,Dec2) - 0.001999999999996*Divert(Outlet,Jan1) - 0.001999999999996*Divert(Outlet,Feb1) - 0.001999999999996*Divert(Outlet,Mar1) - 0.0099999999999*Divert(Outlet,Apr1) - 0.0099999999999*Divert(Outlet,May1) - 0.0099999999999*Divert(Outlet,Jun1) - 0.0099999999999*Divert(Outlet,Jul1) - 0.001999999999996*Divert(Outlet,Aug1) - 0.001999999999996*Divert(Outlet,Sep1) - 0.001999999999996*Divert(Outlet,Oct1) - 0.001999999999996*Divert(Outlet,Nov1) - 0.001999999999996*Divert(Outlet,Dec1) - 0.001999999999996*Divert(Outlet,Jan2) - 0.001999999999996*Divert(Outlet,Feb2) - 0.001999999999996*Divert(Outlet,Mar2) - 0.0099999999999*Divert(Outlet,Apr2) - 0.0099999999999*Divert(Outlet,May2) - 0.0099999999999*Divert(Outlet,Jun2) - 0.0099999999999*Divert(Outlet,Jul2) - 0.001999999999996*Divert(Outlet,Aug2) - 0.001999999999996*Divert(Outlet,Sep2) - 0.001999999999996*Divert(Outlet,Oct2) - 0.001999999999996*Divert(Outlet,Nov2) - 0.001999999999996*Divert(Outlet,Dec2) + obj =E= 0 ; (LHS = 0)
+     
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 3
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Column Listing      SOLVE Lakes Using LP From line 114
+
+
+---- Divert  Diversions
+
+Divert(Divert_1,Jan1)
+                (.LO, .L, .UP, .M = 0, 0, 0, 0)
+       -0.5     R_nr(Divert_1,Jan1)
+        1       R_nn(Simple_2,Jan1)
+  -1.000000E+9  Objective
+
+Divert(Divert_1,Feb1)
+                (.LO, .L, .UP, .M = 0, 0, 0, 0)
+       -0.5     R_nr(Divert_1,Feb1)
+        1       R_nn(Simple_2,Feb1)
+  -1.000000E+9  Objective
+
+Divert(Divert_1,Mar1)
+                (.LO, .L, .UP, .M = 0, 0, 0, 0)
+       -0.5     R_nr(Divert_1,Mar1)
+        1       R_nn(Simple_2,Mar1)
+  -1.000000E+9  Objective
+
+REMAINING 69 ENTRIES SKIPPED
+
+---- Q  Inflows
+
+Q(Supply_1,Jan1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_nn(Supply_1,Jan1)
+
+Q(Supply_1,Feb1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_nn(Supply_1,Feb1)
+
+Q(Supply_1,Mar1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_nn(Supply_1,Mar1)
+
+REMAINING 357 ENTRIES SKIPPED
+
+---- R  Releases
+
+R(Supply_1,Jan1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_ns(Supply_1,Jan1)
+       -1       R_nn(Res_1,Jan1)
+
+R(Supply_1,Feb1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_ns(Supply_1,Feb1)
+       -1       R_nn(Res_1,Feb1)
+
+R(Supply_1,Mar1)
+                (.LO, .L, .UP, .M = 0, 0, +INF, 0)
+        1       R_ns(Supply_1,Mar1)
+       -1       R_nn(Res_1,Mar1)
+
+REMAINING 357 ENTRIES SKIPPED
+
+---- S  Storages
+
+S(Res_1,Jan1)
+                (.LO, .L, .UP, .M = 0, 0, 1000, 0)
+        1       R_nl(Res_1,Jan1)
+       -1       R_nl(Res_1,Feb1)
+
+S(Res_1,Feb1)
+                (.LO, .L, .UP, .M = 0, 0, 1000, 0)
+        1       R_nl(Res_1,Feb1)
+       -1       R_nl(Res_1,Mar1)
+
+S(Res_1,Mar1)
+                (.LO, .L, .UP, .M = 0, 0, 1000, 0)
+        1       R_nl(Res_1,Mar1)
+       -1       R_nl(Res_1,Apr1)
+
+REMAINING 117 ENTRIES SKIPPED
+
+---- obj  
+
+obj
+                (.LO, .L, .UP, .M = -INF, 0, +INF, 0)
+        1       Objective
+
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 4
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Range Statistics    SOLVE Lakes Using LP From line 114
+
+
+RANGE STATISTICS (ABSOLUTE NON-ZERO FINITE VALUES)
+
+RHS       [min, max] : [ 3.900E+01, 1.000E+03] - Zero values observed as well
+Bound     [min, max] : [ 1.300E+01, 1.000E+03] - Zero values observed as well
+Matrix    [min, max] : [ 2.000E-03, 1.000E+09]
+
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 5
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Model Statistics    SOLVE Lakes Using LP From line 114
+
+
+MODEL STATISTICS
+
+BLOCKS OF EQUATIONS           6     SINGLE EQUATIONS          721
+BLOCKS OF VARIABLES           5     SINGLE VARIABLES          913  5 projected
+NON ZERO ELEMENTS         1,772
+
+
+GENERATION TIME      =        0.006 SECONDS      4 MB  45.6.0 2eadeefd DAX-DAC
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 6
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+Solution Report     SOLVE Lakes Using LP From line 114
+
+
+               S O L V E      S U M M A R Y
+
+     MODEL   Lakes               OBJECTIVE  obj
+     TYPE    LP                  DIRECTION  MAXIMIZE
+     SOLVER  CPLEX               FROM LINE  114
+
+**** SOLVER STATUS     1 Normal Completion
+**** MODEL STATUS      1 Optimal
+**** OBJECTIVE VALUE               45.7677
+
+ RESOURCE USAGE, LIMIT          0.005 10000000000.000
+ ITERATION COUNT, LIMIT       112    2147483647
+*** This solver runs with a community license. No commercial use.
+--- GMO setup time: 0.00s
+--- Space for names approximately 0.04 Mb
+--- Use option 'names no' to turn use of names off
+--- GMO memory 0.69 Mb (peak 0.69 Mb)
+--- Dictionary memory 0.00 Mb
+--- Cplex 22.1.1.0 link memory 0.03 Mb (peak 0.10 Mb)
+--- Starting Cplex
+
+
+--- LP status (1): optimal.
+--- Cplex Time: 0.00sec (det. 1.59 ticks)
+
+
+Optimal solution found
+Objective:           45.767700
+
+
+---- EQU R_no  Simple node
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Simple_1.Jan1          .              .              .             EPS         
+Simple_1.Feb1          .              .              .             EPS         
+Simple_1.Mar1          .              .              .             EPS         
+Simple_1.Apr1          .              .              .             EPS         
+Simple_1.May1          .              .              .             EPS         
+Simple_1.Jun1          .              .              .             EPS         
+Simple_1.Jul1          .              .              .             EPS         
+Simple_1.Aug1          .              .              .             EPS         
+Simple_1.Sep1          .              .              .             EPS         
+Simple_1.Oct1          .              .              .             EPS         
+Simple_1.Nov1          .              .              .             EPS         
+Simple_1.Dec1          .              .              .             EPS         
+Simple_1.Jan2          .              .              .             EPS         
+Simple_1.Feb2          .              .              .             EPS         
+Simple_1.Mar2          .              .              .             EPS         
+Simple_1.Apr2          .              .              .             EPS         
+Simple_1.May2          .              .              .             EPS         
+Simple_1.Jun2          .              .              .             EPS         
+Simple_1.Jul2          .              .              .             EPS         
+Simple_1.Aug2          .              .              .             0.0020      
+Simple_1.Sep2          .              .              .             0.0020      
+Simple_1.Oct2          .              .              .             0.0020      
+Simple_1.Nov2          .              .              .             0.0020      
+Simple_1.Dec2          .              .              .             0.0020      
+Simple_2.Jan1          .              .              .             EPS         
+Simple_2.Feb1          .              .              .             EPS         
+Simple_2.Mar1          .              .              .             EPS         
+Simple_2.Apr1          .              .              .             EPS         
+Simple_2.May1          .              .              .             EPS         
+Simple_2.Jun1          .              .              .             EPS         
+Simple_2.Jul1          .              .              .             EPS         
+Simple_2.Aug1          .              .              .             EPS         
+Simple_2.Sep1          .              .              .             EPS         
+Simple_2.Oct1          .              .              .             EPS         
+Simple_2.Nov1          .              .              .             EPS         
+Simple_2.Dec1          .              .              .             EPS         
+Simple_2.Jan2          .              .              .             EPS         
+Simple_2.Feb2          .              .              .             EPS         
+Simple_2.Mar2          .              .              .             EPS         
+Simple_2.Apr2          .              .              .             EPS         
+Simple_2.May2          .              .              .             EPS         
+Simple_2.Jun2          .              .              .             EPS         
+Simple_2.Jul2          .              .              .             EPS         
+Simple_2.Aug2          .              .              .             0.0020      
+Simple_2.Sep2          .              .              .             0.0020      
+Simple_2.Oct2          .              .              .             0.0020      
+Simple_2.Nov2          .              .              .             0.0020      
+Simple_2.Dec2          .              .              .             0.0020      
+Simple_3.Jan1          .              .              .             EPS         
+Simple_3.Feb1          .              .              .             EPS         
+Simple_3.Mar1          .              .              .             EPS         
+Simple_3.Apr1          .              .              .             EPS         
+Simple_3.May1          .              .              .             EPS         
+Simple_3.Jun1          .              .              .             EPS         
+Simple_3.Jul1          .              .              .             EPS         
+Simple_3.Aug1          .              .              .             EPS         
+Simple_3.Sep1          .              .              .             EPS         
+Simple_3.Oct1          .              .              .             EPS         
+Simple_3.Nov1          .              .              .             EPS         
+Simple_3.Dec1          .              .              .             EPS         
+Simple_3.Jan2          .              .              .             EPS         
+Simple_3.Feb2          .              .              .             EPS         
+Simple_3.Mar2          .              .              .             EPS         
+Simple_3.Apr2          .              .              .             EPS         
+Simple_3.May2          .              .              .             EPS         
+Simple_3.Jun2          .              .              .             EPS         
+Simple_3.Jul2          .              .              .             EPS         
+Simple_3.Aug2          .              .              .             0.0020      
+Simple_3.Sep2          .              .              .             0.0020      
+Simple_3.Oct2          .              .              .             0.0020      
+Simple_3.Nov2          .              .              .             0.0020      
+Simple_3.Dec2          .              .              .             0.0020      
+Simple_4.Jan1          .              .              .             EPS         
+Simple_4.Feb1          .              .              .             EPS         
+Simple_4.Mar1          .              .              .             EPS         
+Simple_4.Apr1          .              .              .             EPS         
+Simple_4.May1          .              .              .             EPS         
+Simple_4.Jun1          .              .              .             EPS         
+Simple_4.Jul1          .              .              .             EPS         
+Simple_4.Aug1          .              .              .             EPS         
+Simple_4.Sep1          .              .              .             EPS         
+Simple_4.Oct1          .              .              .             EPS         
+Simple_4.Nov1          .              .              .             EPS         
+Simple_4.Dec1          .              .              .             EPS         
+Simple_4.Jan2          .              .              .             EPS         
+Simple_4.Feb2          .              .              .             EPS         
+Simple_4.Mar2          .              .              .             EPS         
+Simple_4.Apr2          .              .              .             EPS         
+Simple_4.May2          .              .              .             EPS         
+Simple_4.Jun2          .              .              .             EPS         
+Simple_4.Jul2          .              .              .             EPS         
+Simple_4.Aug2          .              .              .             0.0020      
+Simple_4.Sep2          .              .              .             0.0020      
+Simple_4.Oct2          .              .              .             0.0020      
+Simple_4.Nov2          .              .              .             0.0020      
+Simple_4.Dec2          .              .              .             0.0020      
+Simple_5.Jan1          .              .              .             EPS         
+Simple_5.Feb1          .              .              .             EPS         
+Simple_5.Mar1          .              .              .             EPS         
+Simple_5.Apr1          .              .              .             EPS         
+Simple_5.May1          .              .              .             EPS         
+Simple_5.Jun1          .              .              .             EPS         
+Simple_5.Jul1          .              .              .             EPS         
+Simple_5.Aug1          .              .              .             EPS         
+Simple_5.Sep1          .              .              .             EPS         
+Simple_5.Oct1          .              .              .             EPS         
+Simple_5.Nov1          .              .              .             EPS         
+Simple_5.Dec1          .              .              .             EPS         
+Simple_5.Jan2          .              .              .             EPS         
+Simple_5.Feb2          .              .              .             EPS         
+Simple_5.Mar2          .              .              .             EPS         
+Simple_5.Apr2          .              .              .             EPS         
+Simple_5.May2          .              .              .             EPS         
+Simple_5.Jun2          .              .              .             EPS         
+Simple_5.Jul2          .              .              .             EPS         
+Simple_5.Aug2          .              .              .             EPS         
+Simple_5.Sep2          .              .              .             EPS         
+Simple_5.Oct2          .              .              .             EPS         
+Simple_5.Nov2          .              .              .             EPS         
+Simple_5.Dec2          .              .              .             EPS         
+
+---- EQU R_ns  Source node
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Supply_1.Jan1       128.0000       128.0000       128.0000         EPS         
+Supply_1.Feb1       125.0000       125.0000       125.0000         EPS         
+Supply_1.Mar1       234.0000       234.0000       234.0000         EPS         
+Supply_1.Apr1       360.0000       360.0000       360.0000         EPS         
+Supply_1.May1       541.0000       541.0000       541.0000         EPS         
+Supply_1.Jun1       645.0000       645.0000       645.0000         EPS         
+Supply_1.Jul1       807.0000       807.0000       807.0000         EPS         
+Supply_1.Aug1       512.0000       512.0000       512.0000         EPS         
+Supply_1.Sep1       267.0000       267.0000       267.0000         EPS         
+Supply_1.Oct1       210.0000       210.0000       210.0000         EPS         
+Supply_1.Nov1       181.0000       181.0000       181.0000         EPS         
+Supply_1.Dec1       128.0000       128.0000       128.0000         EPS         
+Supply_1.Jan2       128.0000       128.0000       128.0000         EPS         
+Supply_1.Feb2       125.0000       125.0000       125.0000         EPS         
+Supply_1.Mar2       234.0000       234.0000       234.0000         EPS         
+Supply_1.Apr2       360.0000       360.0000       360.0000         EPS         
+Supply_1.May2       541.0000       541.0000       541.0000         EPS         
+Supply_1.Jun2       645.0000       645.0000       645.0000         EPS         
+Supply_1.Jul2       807.0000       807.0000       807.0000         EPS         
+Supply_1.Aug2       512.0000       512.0000       512.0000         0.0020      
+Supply_1.Sep2       267.0000       267.0000       267.0000         0.0020      
+Supply_1.Oct2       210.0000       210.0000       210.0000         0.0020      
+Supply_1.Nov2       181.0000       181.0000       181.0000         0.0020      
+Supply_1.Dec2       128.0000       128.0000       128.0000         0.0020      
+Supply_2.Jan1        39.0000        39.0000        39.0000         EPS         
+Supply_2.Feb1        39.0000        39.0000        39.0000         EPS         
+Supply_2.Mar1        52.0000        52.0000        52.0000         EPS         
+Supply_2.Apr1       121.0000       121.0000       121.0000         EPS         
+Supply_2.May1       168.0000       168.0000       168.0000         EPS         
+Supply_2.Jun1       144.0000       144.0000       144.0000         EPS         
+Supply_2.Jul1       105.0000       105.0000       105.0000         EPS         
+Supply_2.Aug1        78.0000        78.0000        78.0000         EPS         
+Supply_2.Sep1        49.0000        49.0000        49.0000         EPS         
+Supply_2.Oct1        44.0000        44.0000        44.0000         EPS         
+Supply_2.Nov1        45.0000        45.0000        45.0000         EPS         
+Supply_2.Dec1        39.0000        39.0000        39.0000         EPS         
+Supply_2.Jan2        39.0000        39.0000        39.0000         EPS         
+Supply_2.Feb2        39.0000        39.0000        39.0000         EPS         
+Supply_2.Mar2        52.0000        52.0000        52.0000         EPS         
+Supply_2.Apr2       121.0000       121.0000       121.0000         EPS         
+Supply_2.May2       168.0000       168.0000       168.0000         EPS         
+Supply_2.Jun2       144.0000       144.0000       144.0000         EPS         
+Supply_2.Jul2       105.0000       105.0000       105.0000         EPS         
+Supply_2.Aug2        78.0000        78.0000        78.0000         0.0020      
+Supply_2.Sep2        49.0000        49.0000        49.0000         0.0020      
+Supply_2.Oct2        44.0000        44.0000        44.0000         0.0020      
+Supply_2.Nov2        45.0000        45.0000        45.0000         0.0020      
+Supply_2.Dec2        39.0000        39.0000        39.0000         0.0020      
+
+---- EQU R_nr  Irrigation node
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Divert_1.Jan1          .              .              .              .          
+Divert_1.Feb1          .              .              .              .          
+Divert_1.Mar1          .              .              .              .          
+Divert_1.Apr1          .              .              .             EPS         
+Divert_1.May1          .              .              .             EPS         
+Divert_1.Jun1          .              .              .             EPS         
+Divert_1.Jul1          .              .              .             EPS         
+Divert_1.Aug1          .              .              .             EPS         
+Divert_1.Sep1          .              .              .             EPS         
+Divert_1.Oct1          .              .              .              .          
+Divert_1.Nov1          .              .              .              .          
+Divert_1.Dec1          .              .              .              .          
+Divert_1.Jan2          .              .              .              .          
+Divert_1.Feb2          .              .              .              .          
+Divert_1.Mar2          .              .              .              .          
+Divert_1.Apr2          .              .              .             EPS         
+Divert_1.May2          .              .              .             EPS         
+Divert_1.Jun2          .              .              .             EPS         
+Divert_1.Jul2          .              .              .             EPS         
+Divert_1.Aug2          .              .              .             0.0020      
+Divert_1.Sep2          .              .              .             0.0020      
+Divert_1.Oct2          .              .              .             0.0020      
+Divert_1.Nov2          .              .              .             0.0020      
+Divert_1.Dec2          .              .              .             0.0020      
+Divert_2.Jan1          .              .              .              .          
+Divert_2.Feb1          .              .              .              .          
+Divert_2.Mar1          .              .              .              .          
+Divert_2.Apr1          .              .              .             EPS         
+Divert_2.May1          .              .              .             EPS         
+Divert_2.Jun1          .              .              .             EPS         
+Divert_2.Jul1          .              .              .             EPS         
+Divert_2.Aug1          .              .              .             EPS         
+Divert_2.Sep1          .              .              .             EPS         
+Divert_2.Oct1          .              .              .              .          
+Divert_2.Nov1          .              .              .              .          
+Divert_2.Dec1          .              .              .              .          
+Divert_2.Jan2          .              .              .              .          
+Divert_2.Feb2          .              .              .              .          
+Divert_2.Mar2          .              .              .              .          
+Divert_2.Apr2          .              .              .             EPS         
+Divert_2.May2          .              .              .             EPS         
+Divert_2.Jun2          .              .              .             EPS         
+Divert_2.Jul2          .              .              .             EPS         
+Divert_2.Aug2          .              .              .             0.0020      
+Divert_2.Sep2          .              .              .             0.0020      
+Divert_2.Oct2          .              .              .             0.0020      
+Divert_2.Nov2          .              .              .             0.0020      
+Divert_2.Dec2          .              .              .             0.0020      
+Outlet  .Jan1          .              .              .              .          
+Outlet  .Feb1          .              .              .              .          
+Outlet  .Mar1          .              .              .              .          
+Outlet  .Apr1          .              .              .              .          
+Outlet  .May1          .              .              .              .          
+Outlet  .Jun1          .              .              .              .          
+Outlet  .Jul1          .              .              .              .          
+Outlet  .Aug1          .              .              .              .          
+Outlet  .Sep1          .              .              .              .          
+Outlet  .Oct1          .              .              .              .          
+Outlet  .Nov1          .              .              .              .          
+Outlet  .Dec1          .              .              .              .          
+Outlet  .Jan2          .              .              .              .          
+Outlet  .Feb2          .              .              .              .          
+Outlet  .Mar2          .              .              .              .          
+Outlet  .Apr2          .              .              .              .          
+Outlet  .May2          .              .              .              .          
+Outlet  .Jun2          .              .              .              .          
+Outlet  .Jul2          .              .              .              .          
+Outlet  .Aug2          .              .              .              .          
+Outlet  .Sep2          .              .              .              .          
+Outlet  .Oct2          .              .              .              .          
+Outlet  .Nov2          .              .              .              .          
+Outlet  .Dec2          .              .              .              .          
+
+---- EQU R_nl  Reservoir node
+
+                  LOWER          LEVEL          UPPER         MARGINAL
+
+Res_1.Jan1      1000.0000      1000.0000      1000.0000         EPS         
+Res_1.Feb1          .              .              .             EPS         
+Res_1.Mar1          .              .              .             EPS         
+Res_1.Apr1          .              .              .             EPS         
+Res_1.May1          .              .              .             EPS         
+Res_1.Jun1          .              .              .             EPS         
+Res_1.Jul1          .              .              .             EPS         
+Res_1.Aug1          .              .              .             EPS         
+Res_1.Sep1          .              .              .             EPS         
+Res_1.Oct1          .              .              .             EPS         
+Res_1.Nov1          .              .              .             EPS         
+Res_1.Dec1          .              .              .             EPS         
+Res_1.Jan2          .              .              .             EPS         
+Res_1.Feb2          .              .              .             EPS         
+Res_1.Mar2          .              .              .             EPS         
+Res_1.Apr2          .              .              .             EPS         
+Res_1.May2          .              .              .             EPS         
+Res_1.Jun2          .              .              .             EPS         
+Res_1.Jul2          .              .              .             EPS         
+Res_1.Aug2          .              .              .             0.0020      
+Res_1.Sep2          .              .              .             0.0020      
+Res_1.Oct2          .              .              .             0.0020      
+Res_1.Nov2          .              .              .             0.0020      
+Res_1.Dec2          .              .              .             0.0020      
+Res_2.Jan1       300.0000       300.0000       300.0000         EPS         
+Res_2.Feb1          .              .              .             EPS         
+Res_2.Mar1          .              .              .             EPS         
+Res_2.Apr1          .              .              .             EPS         
+Res_2.May1          .              .              .             EPS         
+Res_2.Jun1          .              .              .             EPS         
+Res_2.Jul1          .              .              .             EPS         
+Res_2.Aug1          .              .              .             EPS         
+Res_2.Sep1          .              .              .             EPS         
+Res_2.Oct1          .              .              .             EPS         
+Res_2.Nov1          .              .              .             EPS         
+Res_2.Dec1          .              .              .             EPS         
+Res_2.Jan2          .              .              .             EPS         
+Res_2.Feb2          .              .              .             EPS         
+Res_2.Mar2          .              .              .             EPS         
+Res_2.Apr2          .              .              .             EPS         
+Res_2.May2          .              .              .             EPS         
+Res_2.Jun2          .              .              .             EPS         
+Res_2.Jul2          .              .              .             EPS         
+Res_2.Aug2          .              .              .             0.0020      
+Res_2.Sep2          .              .              .             0.0020      
+Res_2.Oct2          .              .              .             0.0020      
+Res_2.Nov2          .              .              .             0.0020      
+Res_2.Dec2          .              .              .             0.0020      
+Res_3.Jan1       500.0000       500.0000       500.0000         EPS         
+Res_3.Feb1          .              .              .             EPS         
+Res_3.Mar1          .              .              .             EPS         
+Res_3.Apr1          .              .              .             EPS         
+Res_3.May1          .              .              .             EPS         
+Res_3.Jun1          .              .              .             EPS         
+Res_3.Jul1          .              .              .             EPS         
+Res_3.Aug1          .              .              .             EPS         
+Res_3.Sep1          .              .              .             EPS         
+Res_3.Oct1          .              .              .             EPS         
+Res_3.Nov1          .              .              .             EPS         
+Res_3.Dec1          .              .              .             EPS         
+Res_3.Jan2          .              .              .             EPS         
+Res_3.Feb2          .              .              .             EPS         
+Res_3.Mar2          .              .              .             EPS         
+Res_3.Apr2          .              .              .             EPS         
+Res_3.May2          .              .              .             EPS         
+Res_3.Jun2          .              .              .             EPS         
+Res_3.Jul2          .              .              .             EPS         
+Res_3.Aug2          .              .              .             0.0020      
+Res_3.Sep2          .              .              .             0.0020      
+Res_3.Oct2          .              .              .             0.0020      
+Res_3.Nov2          .              .              .             0.0020      
+Res_3.Dec2          .              .              .             0.0020      
+Res_4.Jan1       150.0000       150.0000       150.0000         EPS         
+Res_4.Feb1          .              .              .             EPS         
+Res_4.Mar1          .              .              .             EPS         
+Res_4.Apr1          .              .              .             EPS         
+Res_4.May1          .              .              .             EPS         
+Res_4.Jun1          .              .              .             EPS         
+Res_4.Jul1          .              .              .             EPS         
+Res_4.Aug1          .              .              .             EPS         
+Res_4.Sep1          .              .              .             EPS         
+Res_4.Oct1          .              .              .             EPS         
+Res_4.Nov1          .              .              .             EPS         
+Res_4.Dec1          .              .              .             EPS         
+Res_4.Jan2          .              .              .             EPS         
+Res_4.Feb2          .              .              .             EPS         
+Res_4.Mar2          .              .              .             EPS         
+Res_4.Apr2          .              .              .             EPS         
+Res_4.May2          .              .              .             EPS         
+Res_4.Jun2          .              .              .             EPS         
+Res_4.Jul2          .              .              .             EPS         
+Res_4.Aug2          .              .              .             0.0020      
+Res_4.Sep2          .              .              .             0.0020      
+Res_4.Oct2          .              .              .             0.0020      
+Res_4.Nov2          .              .              .             0.0020      
+Res_4.Dec2          .              .              .             0.0020      
+Res_5.Jan1       100.0000       100.0000       100.0000         EPS         
+Res_5.Feb1          .              .              .             EPS         
+Res_5.Mar1          .              .              .             EPS         
+Res_5.Apr1          .              .              .             EPS         
+Res_5.May1          .              .              .             EPS         
+Res_5.Jun1          .              .              .             EPS         
+Res_5.Jul1          .              .              .             EPS         
+Res_5.Aug1          .              .              .             EPS         
+Res_5.Sep1          .              .              .             EPS         
+Res_5.Oct1          .              .              .             EPS         
+Res_5.Nov1          .              .              .             EPS         
+Res_5.Dec1          .              .              .             EPS         
+Res_5.Jan2          .              .              .             EPS         
+Res_5.Feb2          .              .              .             EPS         
+Res_5.Mar2          .              .              .             EPS         
+Res_5.Apr2          .              .              .             EPS         
+Res_5.May2          .              .              .             EPS         
+Res_5.Jun2          .              .              .             EPS         
+Res_5.Jul2          .              .              .             EPS         
+Res_5.Aug2          .              .              .             0.0020      
+Res_5.Sep2          .              .              .             0.0020      
+Res_5.Oct2          .              .              .             0.0020      
+Res_5.Nov2          .              .              .             0.0020      
+Res_5.Dec2          .              .              .             0.0020      
+
+---- EQU R_nn  Simple node
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Supply_1.Jan1          .              .              .              .          
+Supply_1.Feb1          .              .              .              .          
+Supply_1.Mar1          .              .              .              .          
+Supply_1.Apr1          .              .              .              .          
+Supply_1.May1          .              .              .              .          
+Supply_1.Jun1          .              .              .              .          
+Supply_1.Jul1          .              .              .              .          
+Supply_1.Aug1          .              .              .              .          
+Supply_1.Sep1          .              .              .              .          
+Supply_1.Oct1          .              .              .              .          
+Supply_1.Nov1          .              .              .              .          
+Supply_1.Dec1          .              .              .              .          
+Supply_1.Jan2          .              .              .              .          
+Supply_1.Feb2          .              .              .              .          
+Supply_1.Mar2          .              .              .              .          
+Supply_1.Apr2          .              .              .              .          
+Supply_1.May2          .              .              .              .          
+Supply_1.Jun2          .              .              .              .          
+Supply_1.Jul2          .              .              .              .          
+Supply_1.Aug2          .              .              .              .          
+Supply_1.Sep2          .              .              .              .          
+Supply_1.Oct2          .              .              .              .          
+Supply_1.Nov2          .              .              .              .          
+Supply_1.Dec2          .              .              .              .          
+Supply_2.Jan1          .              .              .              .          
+Supply_2.Feb1          .              .              .              .          
+Supply_2.Mar1          .              .              .              .          
+Supply_2.Apr1          .              .              .              .          
+Supply_2.May1          .              .              .              .          
+Supply_2.Jun1          .              .              .              .          
+Supply_2.Jul1          .              .              .              .          
+Supply_2.Aug1          .              .              .              .          
+Supply_2.Sep1          .              .              .              .          
+Supply_2.Oct1          .              .              .              .          
+Supply_2.Nov1          .              .              .              .          
+Supply_2.Dec1          .              .              .              .          
+Supply_2.Jan2          .              .              .              .          
+Supply_2.Feb2          .              .              .              .          
+Supply_2.Mar2          .              .              .              .          
+Supply_2.Apr2          .              .              .              .          
+Supply_2.May2          .              .              .              .          
+Supply_2.Jun2          .              .              .              .          
+Supply_2.Jul2          .              .              .              .          
+Supply_2.Aug2          .              .              .              .          
+Supply_2.Sep2          .              .              .              .          
+Supply_2.Oct2          .              .              .              .          
+Supply_2.Nov2          .              .              .              .          
+Supply_2.Dec2          .              .              .              .          
+Simple_1.Jan1          .              .              .             EPS         
+Simple_1.Feb1          .              .              .             EPS         
+Simple_1.Mar1          .              .              .             EPS         
+Simple_1.Apr1          .              .              .             EPS         
+Simple_1.May1          .              .              .             EPS         
+Simple_1.Jun1          .              .              .             EPS         
+Simple_1.Jul1          .              .              .             EPS         
+Simple_1.Aug1          .              .              .             EPS         
+Simple_1.Sep1          .              .              .             EPS         
+Simple_1.Oct1          .              .              .             EPS         
+Simple_1.Nov1          .              .              .             EPS         
+Simple_1.Dec1          .              .              .             EPS         
+Simple_1.Jan2          .              .              .             EPS         
+Simple_1.Feb2          .              .              .             EPS         
+Simple_1.Mar2          .              .              .             EPS         
+Simple_1.Apr2          .              .              .             EPS         
+Simple_1.May2          .              .              .             EPS         
+Simple_1.Jun2          .              .              .             EPS         
+Simple_1.Jul2          .              .              .             EPS         
+Simple_1.Aug2          .              .              .             0.0020      
+Simple_1.Sep2          .              .              .             0.0020      
+Simple_1.Oct2          .              .              .             0.0020      
+Simple_1.Nov2          .              .              .             0.0020      
+Simple_1.Dec2          .              .              .             0.0020      
+Simple_2.Jan1          .              .              .             EPS         
+Simple_2.Feb1          .              .              .             EPS         
+Simple_2.Mar1          .              .              .             EPS         
+Simple_2.Apr1          .              .              .             EPS         
+Simple_2.May1          .              .              .             EPS         
+Simple_2.Jun1          .              .              .             EPS         
+Simple_2.Jul1          .              .              .             EPS         
+Simple_2.Aug1          .              .              .             EPS         
+Simple_2.Sep1          .              .              .             EPS         
+Simple_2.Oct1          .              .              .             EPS         
+Simple_2.Nov1          .              .              .             EPS         
+Simple_2.Dec1          .              .              .             EPS         
+Simple_2.Jan2          .              .              .             EPS         
+Simple_2.Feb2          .              .              .             EPS         
+Simple_2.Mar2          .              .              .             EPS         
+Simple_2.Apr2          .              .              .             EPS         
+Simple_2.May2          .              .              .             EPS         
+Simple_2.Jun2          .              .              .             EPS         
+Simple_2.Jul2          .              .              .             EPS         
+Simple_2.Aug2          .              .              .             0.0020      
+Simple_2.Sep2          .              .              .             0.0020      
+Simple_2.Oct2          .              .              .             0.0020      
+Simple_2.Nov2          .              .              .             0.0020      
+Simple_2.Dec2          .              .              .             0.0020      
+Simple_3.Jan1          .              .              .             EPS         
+Simple_3.Feb1          .              .              .             EPS         
+Simple_3.Mar1          .              .              .             EPS         
+Simple_3.Apr1          .              .              .             EPS         
+Simple_3.May1          .              .              .             EPS         
+Simple_3.Jun1          .              .              .             EPS         
+Simple_3.Jul1          .              .              .             EPS         
+Simple_3.Aug1          .              .              .             EPS         
+Simple_3.Sep1          .              .              .             EPS         
+Simple_3.Oct1          .              .              .             EPS         
+Simple_3.Nov1          .              .              .             EPS         
+Simple_3.Dec1          .              .              .             EPS         
+Simple_3.Jan2          .              .              .             EPS         
+Simple_3.Feb2          .              .              .             EPS         
+Simple_3.Mar2          .              .              .             EPS         
+Simple_3.Apr2          .              .              .             EPS         
+Simple_3.May2          .              .              .             EPS         
+Simple_3.Jun2          .              .              .             EPS         
+Simple_3.Jul2          .              .              .             EPS         
+Simple_3.Aug2          .              .              .             0.0020      
+Simple_3.Sep2          .              .              .             0.0020      
+Simple_3.Oct2          .              .              .             0.0020      
+Simple_3.Nov2          .              .              .             0.0020      
+Simple_3.Dec2          .              .              .             0.0020      
+Simple_4.Jan1          .              .              .             EPS         
+Simple_4.Feb1          .              .              .             EPS         
+Simple_4.Mar1          .              .              .             EPS         
+Simple_4.Apr1          .              .              .             EPS         
+Simple_4.May1          .              .              .             EPS         
+Simple_4.Jun1          .              .              .             EPS         
+Simple_4.Jul1          .              .              .             EPS         
+Simple_4.Aug1          .              .              .             EPS         
+Simple_4.Sep1          .              .              .             EPS         
+Simple_4.Oct1          .              .              .             EPS         
+Simple_4.Nov1          .              .              .             EPS         
+Simple_4.Dec1          .              .              .             EPS         
+Simple_4.Jan2          .              .              .             EPS         
+Simple_4.Feb2          .              .              .             EPS         
+Simple_4.Mar2          .              .              .             EPS         
+Simple_4.Apr2          .              .              .             EPS         
+Simple_4.May2          .              .              .             EPS         
+Simple_4.Jun2          .              .              .             EPS         
+Simple_4.Jul2          .              .              .             EPS         
+Simple_4.Aug2          .              .              .             0.0020      
+Simple_4.Sep2          .              .              .             0.0020      
+Simple_4.Oct2          .              .              .             0.0020      
+Simple_4.Nov2          .              .              .             0.0020      
+Simple_4.Dec2          .              .              .             0.0020      
+Simple_5.Jan1          .              .              .             EPS         
+Simple_5.Feb1          .              .              .             EPS         
+Simple_5.Mar1          .              .              .             EPS         
+Simple_5.Apr1          .              .              .             EPS         
+Simple_5.May1          .              .              .             EPS         
+Simple_5.Jun1          .              .              .             EPS         
+Simple_5.Jul1          .              .              .             EPS         
+Simple_5.Aug1          .              .              .             EPS         
+Simple_5.Sep1          .              .              .             EPS         
+Simple_5.Oct1          .              .              .             EPS         
+Simple_5.Nov1          .              .              .             EPS         
+Simple_5.Dec1          .              .              .             EPS         
+Simple_5.Jan2          .              .              .             EPS         
+Simple_5.Feb2          .              .              .             EPS         
+Simple_5.Mar2          .              .              .             EPS         
+Simple_5.Apr2          .              .              .             EPS         
+Simple_5.May2          .              .              .             EPS         
+Simple_5.Jun2          .              .              .             EPS         
+Simple_5.Jul2          .              .              .             EPS         
+Simple_5.Aug2          .              .              .             0.0020      
+Simple_5.Sep2          .              .              .             0.0020      
+Simple_5.Oct2          .              .              .             0.0020      
+Simple_5.Nov2          .              .              .             0.0020      
+Simple_5.Dec2          .              .              .             0.0020      
+Divert_1.Jan1          .              .              .             EPS         
+Divert_1.Feb1          .              .              .             EPS         
+Divert_1.Mar1          .              .              .             EPS         
+Divert_1.Apr1          .              .              .             EPS         
+Divert_1.May1          .              .              .             EPS         
+Divert_1.Jun1          .              .              .             EPS         
+Divert_1.Jul1          .              .              .             EPS         
+Divert_1.Aug1          .              .              .             EPS         
+Divert_1.Sep1          .              .              .             EPS         
+Divert_1.Oct1          .              .              .             EPS         
+Divert_1.Nov1          .              .              .             EPS         
+Divert_1.Dec1          .              .              .             EPS         
+Divert_1.Jan2          .              .              .             EPS         
+Divert_1.Feb2          .              .              .             EPS         
+Divert_1.Mar2          .              .              .             EPS         
+Divert_1.Apr2          .              .              .             EPS         
+Divert_1.May2          .              .              .             EPS         
+Divert_1.Jun2          .              .              .             EPS         
+Divert_1.Jul2          .              .              .             EPS         
+Divert_1.Aug2          .              .              .             EPS         
+Divert_1.Sep2          .              .              .             EPS         
+Divert_1.Oct2          .              .              .             EPS         
+Divert_1.Nov2          .              .              .             EPS         
+Divert_1.Dec2          .              .              .             EPS         
+Divert_2.Jan1          .              .              .             EPS         
+Divert_2.Feb1          .              .              .             EPS         
+Divert_2.Mar1          .              .              .             EPS         
+Divert_2.Apr1          .              .              .             EPS         
+Divert_2.May1          .              .              .             EPS         
+Divert_2.Jun1          .              .              .             EPS         
+Divert_2.Jul1          .              .              .             EPS         
+Divert_2.Aug1          .              .              .             EPS         
+Divert_2.Sep1          .              .              .             EPS         
+Divert_2.Oct1          .              .              .             EPS         
+Divert_2.Nov1          .              .              .             EPS         
+Divert_2.Dec1          .              .              .             EPS         
+Divert_2.Jan2          .              .              .             EPS         
+Divert_2.Feb2          .              .              .             EPS         
+Divert_2.Mar2          .              .              .             EPS         
+Divert_2.Apr2          .              .              .             EPS         
+Divert_2.May2          .              .              .             EPS         
+Divert_2.Jun2          .              .              .             EPS         
+Divert_2.Jul2          .              .              .             EPS         
+Divert_2.Aug2          .              .              .             EPS         
+Divert_2.Sep2          .              .              .             EPS         
+Divert_2.Oct2          .              .              .             EPS         
+Divert_2.Nov2          .              .              .             EPS         
+Divert_2.Dec2          .              .              .             EPS         
+Res_1   .Jan1          .              .              .             EPS         
+Res_1   .Feb1          .              .              .             EPS         
+Res_1   .Mar1          .              .              .             EPS         
+Res_1   .Apr1          .              .              .             EPS         
+Res_1   .May1          .              .              .             EPS         
+Res_1   .Jun1          .              .              .             EPS         
+Res_1   .Jul1          .              .              .             EPS         
+Res_1   .Aug1          .              .              .             EPS         
+Res_1   .Sep1          .              .              .             EPS         
+Res_1   .Oct1          .              .              .             EPS         
+Res_1   .Nov1          .              .              .             EPS         
+Res_1   .Dec1          .              .              .             EPS         
+Res_1   .Jan2          .              .              .             EPS         
+Res_1   .Feb2          .              .              .             EPS         
+Res_1   .Mar2          .              .              .             EPS         
+Res_1   .Apr2          .              .              .             EPS         
+Res_1   .May2          .              .              .             EPS         
+Res_1   .Jun2          .              .              .             EPS         
+Res_1   .Jul2          .              .              .             EPS         
+Res_1   .Aug2          .              .              .             0.0020      
+Res_1   .Sep2          .              .              .             0.0020      
+Res_1   .Oct2          .              .              .             0.0020      
+Res_1   .Nov2          .              .              .             0.0020      
+Res_1   .Dec2          .              .              .             0.0020      
+Res_2   .Jan1          .              .              .             EPS         
+Res_2   .Feb1          .              .              .             EPS         
+Res_2   .Mar1          .              .              .             EPS         
+Res_2   .Apr1          .              .              .             EPS         
+Res_2   .May1          .              .              .             EPS         
+Res_2   .Jun1          .              .              .             EPS         
+Res_2   .Jul1          .              .              .             EPS         
+Res_2   .Aug1          .              .              .             EPS         
+Res_2   .Sep1          .              .              .             EPS         
+Res_2   .Oct1          .              .              .             EPS         
+Res_2   .Nov1          .              .              .             EPS         
+Res_2   .Dec1          .              .              .             EPS         
+Res_2   .Jan2          .              .              .             EPS         
+Res_2   .Feb2          .              .              .             EPS         
+Res_2   .Mar2          .              .              .             EPS         
+Res_2   .Apr2          .              .              .             EPS         
+Res_2   .May2          .              .              .             EPS         
+Res_2   .Jun2          .              .              .             EPS         
+Res_2   .Jul2          .              .              .             EPS         
+Res_2   .Aug2          .              .              .             0.0020      
+Res_2   .Sep2          .              .              .             0.0020      
+Res_2   .Oct2          .              .              .             0.0020      
+Res_2   .Nov2          .              .              .             0.0020      
+Res_2   .Dec2          .              .              .             0.0020      
+Res_3   .Jan1          .              .              .             EPS         
+Res_3   .Feb1          .              .              .             EPS         
+Res_3   .Mar1          .              .              .             EPS         
+Res_3   .Apr1          .              .              .             EPS         
+Res_3   .May1          .              .              .             EPS         
+Res_3   .Jun1          .              .              .             EPS         
+Res_3   .Jul1          .              .              .             EPS         
+Res_3   .Aug1          .              .              .             EPS         
+Res_3   .Sep1          .              .              .             EPS         
+Res_3   .Oct1          .              .              .             EPS         
+Res_3   .Nov1          .              .              .             EPS         
+Res_3   .Dec1          .              .              .             EPS         
+Res_3   .Jan2          .              .              .             EPS         
+Res_3   .Feb2          .              .              .             EPS         
+Res_3   .Mar2          .              .              .             EPS         
+Res_3   .Apr2          .              .              .             EPS         
+Res_3   .May2          .              .              .             EPS         
+Res_3   .Jun2          .              .              .             EPS         
+Res_3   .Jul2          .              .              .             EPS         
+Res_3   .Aug2          .              .              .             0.0020      
+Res_3   .Sep2          .              .              .             0.0020      
+Res_3   .Oct2          .              .              .             0.0020      
+Res_3   .Nov2          .              .              .             0.0020      
+Res_3   .Dec2          .              .              .             0.0020      
+Res_4   .Jan1          .              .              .             EPS         
+Res_4   .Feb1          .              .              .             EPS         
+Res_4   .Mar1          .              .              .             EPS         
+Res_4   .Apr1          .              .              .             EPS         
+Res_4   .May1          .              .              .             EPS         
+Res_4   .Jun1          .              .              .             EPS         
+Res_4   .Jul1          .              .              .             EPS         
+Res_4   .Aug1          .              .              .             EPS         
+Res_4   .Sep1          .              .              .             EPS         
+Res_4   .Oct1          .              .              .             EPS         
+Res_4   .Nov1          .              .              .             EPS         
+Res_4   .Dec1          .              .              .             EPS         
+Res_4   .Jan2          .              .              .             EPS         
+Res_4   .Feb2          .              .              .             EPS         
+Res_4   .Mar2          .              .              .             EPS         
+Res_4   .Apr2          .              .              .             EPS         
+Res_4   .May2          .              .              .             EPS         
+Res_4   .Jun2          .              .              .             EPS         
+Res_4   .Jul2          .              .              .             EPS         
+Res_4   .Aug2          .              .              .             0.0020      
+Res_4   .Sep2          .              .              .             0.0020      
+Res_4   .Oct2          .              .              .             0.0020      
+Res_4   .Nov2          .              .              .             0.0020      
+Res_4   .Dec2          .              .              .             0.0020      
+Res_5   .Jan1          .              .              .             EPS         
+Res_5   .Feb1          .              .              .             EPS         
+Res_5   .Mar1          .              .              .             EPS         
+Res_5   .Apr1          .              .              .             EPS         
+Res_5   .May1          .              .              .             EPS         
+Res_5   .Jun1          .              .              .             EPS         
+Res_5   .Jul1          .              .              .             EPS         
+Res_5   .Aug1          .              .              .             EPS         
+Res_5   .Sep1          .              .              .             EPS         
+Res_5   .Oct1          .              .              .             EPS         
+Res_5   .Nov1          .              .              .             EPS         
+Res_5   .Dec1          .              .              .             EPS         
+Res_5   .Jan2          .              .              .             EPS         
+Res_5   .Feb2          .              .              .             EPS         
+Res_5   .Mar2          .              .              .             EPS         
+Res_5   .Apr2          .              .              .             EPS         
+Res_5   .May2          .              .              .             EPS         
+Res_5   .Jun2          .              .              .             EPS         
+Res_5   .Jul2          .              .              .             EPS         
+Res_5   .Aug2          .              .              .             0.0020      
+Res_5   .Sep2          .              .              .             0.0020      
+Res_5   .Oct2          .              .              .             0.0020      
+Res_5   .Nov2          .              .              .             0.0020      
+Res_5   .Dec2          .              .              .             0.0020      
+Outlet  .Jan1          .              .              .             EPS         
+Outlet  .Feb1          .              .              .             EPS         
+Outlet  .Mar1          .              .              .             EPS         
+Outlet  .Apr1          .              .              .             EPS         
+Outlet  .May1          .              .              .             EPS         
+Outlet  .Jun1          .              .              .             EPS         
+Outlet  .Jul1          .              .              .             EPS         
+Outlet  .Aug1          .              .              .             EPS         
+Outlet  .Sep1          .              .              .             EPS         
+Outlet  .Oct1          .              .              .             EPS         
+Outlet  .Nov1          .              .              .             EPS         
+Outlet  .Dec1          .              .              .             EPS         
+Outlet  .Jan2          .              .              .             EPS         
+Outlet  .Feb2          .              .              .             EPS         
+Outlet  .Mar2          .              .              .             EPS         
+Outlet  .Apr2          .              .              .             EPS         
+Outlet  .May2          .              .              .             EPS         
+Outlet  .Jun2          .              .              .             EPS         
+Outlet  .Jul2          .              .              .             EPS         
+Outlet  .Aug2          .              .              .             EPS         
+Outlet  .Sep2          .              .              .             EPS         
+Outlet  .Oct2          .              .              .             EPS         
+Outlet  .Nov2          .              .              .             EPS         
+Outlet  .Dec2          .              .              .             EPS         
+
+                           LOWER          LEVEL          UPPER         MARGINAL
+
+---- EQU Objective           .              .              .             1.0000      
+
+---- VAR Divert  Diversions
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Divert_1.Jan1          .              .              .       1.0000000E+9      
+Divert_1.Feb1          .              .              .       1.0000000E+9      
+Divert_1.Mar1          .              .              .       1.0000000E+9      
+Divert_1.Apr1          .            64.5000        64.5000         0.0155      
+Divert_1.May1          .           109.8000       109.8000         0.0091      
+Divert_1.Jun1          .           184.4000       184.4000         0.0054      
+Divert_1.Jul1          .           243.7000       243.7000         0.0041      
+Divert_1.Aug1          .           200.9000       200.9000         0.0050      
+Divert_1.Sep1          .            99.5000        99.5000         0.0101      
+Divert_1.Oct1          .              .              .       1.0000000E+9      
+Divert_1.Nov1          .              .              .       1.0000000E+9      
+Divert_1.Dec1          .              .              .       1.0000000E+9      
+Divert_1.Jan2          .              .              .       1.0000000E+9      
+Divert_1.Feb2          .              .              .       1.0000000E+9      
+Divert_1.Mar2          .              .              .       1.0000000E+9      
+Divert_1.Apr2          .            64.5000        64.5000         0.0155      
+Divert_1.May2          .           109.8000       109.8000         0.0091      
+Divert_1.Jun2          .           184.4000       184.4000         0.0054      
+Divert_1.Jul2          .           243.7000       243.7000         0.0041      
+Divert_1.Aug2          .           200.9000       200.9000         0.0040      
+Divert_1.Sep2          .            99.5000        99.5000         0.0091      
+Divert_1.Oct2          .              .              .       1.0000000E+9      
+Divert_1.Nov2          .              .              .       1.0000000E+9      
+Divert_1.Dec2          .              .              .       1.0000000E+9      
+Divert_2.Jan1          .              .              .       1.0000000E+9      
+Divert_2.Feb1          .              .              .       1.0000000E+9      
+Divert_2.Mar1          .              .              .       1.0000000E+9      
+Divert_2.Apr1          .            13.5000        13.5000         0.0741      
+Divert_2.May1          .            15.0000        15.0000         0.0667      
+Divert_2.Jun1          .            22.1000        22.1000         0.0452      
+Divert_2.Jul1          .            26.0000        26.0000         0.0385      
+Divert_2.Aug1          .            24.9000        24.9000         0.0402      
+Divert_2.Sep1          .            13.0000        13.0000         0.0769      
+Divert_2.Oct1          .              .              .       1.0000000E+9      
+Divert_2.Nov1          .              .              .       1.0000000E+9      
+Divert_2.Dec1          .              .              .       1.0000000E+9      
+Divert_2.Jan2          .              .              .       1.0000000E+9      
+Divert_2.Feb2          .              .              .       1.0000000E+9      
+Divert_2.Mar2          .              .              .       1.0000000E+9      
+Divert_2.Apr2          .            13.5000        13.5000         0.0741      
+Divert_2.May2          .            15.0000        15.0000         0.0667      
+Divert_2.Jun2          .            22.1000        22.1000         0.0452      
+Divert_2.Jul2          .            26.0000        26.0000         0.0385      
+Divert_2.Aug2          .            24.9000        24.9000         0.0392      
+Divert_2.Sep2          .            13.0000        13.0000         0.0759      
+Divert_2.Oct2          .              .              .       1.0000000E+9      
+Divert_2.Nov2          .              .              .       1.0000000E+9      
+Divert_2.Dec2          .              .              .       1.0000000E+9      
+Outlet  .Jan1          .           500.0000       500.0000         0.0020      
+Outlet  .Feb1          .           500.0000       500.0000         0.0020      
+Outlet  .Mar1          .           500.0000       500.0000         0.0020      
+Outlet  .Apr1          .           100.0000       100.0000         0.0100      
+Outlet  .May1          .           100.0000       100.0000         0.0100      
+Outlet  .Jun1          .           100.0000       100.0000         0.0100      
+Outlet  .Jul1          .           100.0000       100.0000         0.0100      
+Outlet  .Aug1          .           500.0000       500.0000         0.0020      
+Outlet  .Sep1          .           500.0000       500.0000         0.0020      
+Outlet  .Oct1          .           500.0000       500.0000         0.0020      
+Outlet  .Nov1          .           500.0000       500.0000         0.0020      
+Outlet  .Dec1          .           500.0000       500.0000         0.0020      
+Outlet  .Jan2          .           500.0000       500.0000         0.0020      
+Outlet  .Feb2          .           500.0000       500.0000         0.0020      
+Outlet  .Mar2          .           500.0000       500.0000         0.0020      
+Outlet  .Apr2          .           100.0000       100.0000         0.0100      
+Outlet  .May2          .           100.0000       100.0000         0.0100      
+Outlet  .Jun2          .           100.0000       100.0000         0.0100      
+Outlet  .Jul2          .           100.0000       100.0000         0.0100      
+Outlet  .Aug2          .           477.1000       500.0000          .          
+Outlet  .Sep2          .           259.7500       500.0000          .          
+Outlet  .Oct2          .           338.0000       500.0000          .          
+Outlet  .Nov2          .           181.0000       500.0000          .          
+Outlet  .Dec2          .           128.0000       500.0000          .          
+
+---- VAR Q  Inflows
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Supply_1.Jan1          .              .            +INF            EPS         
+Supply_1.Feb1          .              .            +INF            EPS         
+Supply_1.Mar1          .              .            +INF            EPS         
+Supply_1.Apr1          .              .            +INF            EPS         
+Supply_1.May1          .              .            +INF            EPS         
+Supply_1.Jun1          .              .            +INF            EPS         
+Supply_1.Jul1          .              .            +INF            EPS         
+Supply_1.Aug1          .              .            +INF            EPS         
+Supply_1.Sep1          .              .            +INF            EPS         
+Supply_1.Oct1          .              .            +INF            EPS         
+Supply_1.Nov1          .              .            +INF            EPS         
+Supply_1.Dec1          .              .            +INF            EPS         
+Supply_1.Jan2          .              .            +INF            EPS         
+Supply_1.Feb2          .              .            +INF            EPS         
+Supply_1.Mar2          .              .            +INF            EPS         
+Supply_1.Apr2          .              .            +INF            EPS         
+Supply_1.May2          .              .            +INF            EPS         
+Supply_1.Jun2          .              .            +INF            EPS         
+Supply_1.Jul2          .              .            +INF            EPS         
+Supply_1.Aug2          .              .            +INF            EPS         
+Supply_1.Sep2          .              .            +INF            EPS         
+Supply_1.Oct2          .              .            +INF            EPS         
+Supply_1.Nov2          .              .            +INF            EPS         
+Supply_1.Dec2          .              .            +INF            EPS         
+Supply_2.Jan1          .              .            +INF            EPS         
+Supply_2.Feb1          .              .            +INF            EPS         
+Supply_2.Mar1          .              .            +INF            EPS         
+Supply_2.Apr1          .              .            +INF            EPS         
+Supply_2.May1          .              .            +INF            EPS         
+Supply_2.Jun1          .              .            +INF            EPS         
+Supply_2.Jul1          .              .            +INF            EPS         
+Supply_2.Aug1          .              .            +INF            EPS         
+Supply_2.Sep1          .              .            +INF            EPS         
+Supply_2.Oct1          .              .            +INF            EPS         
+Supply_2.Nov1          .              .            +INF            EPS         
+Supply_2.Dec1          .              .            +INF            EPS         
+Supply_2.Jan2          .              .            +INF            EPS         
+Supply_2.Feb2          .              .            +INF            EPS         
+Supply_2.Mar2          .              .            +INF            EPS         
+Supply_2.Apr2          .              .            +INF            EPS         
+Supply_2.May2          .              .            +INF            EPS         
+Supply_2.Jun2          .              .            +INF            EPS         
+Supply_2.Jul2          .              .            +INF            EPS         
+Supply_2.Aug2          .              .            +INF            EPS         
+Supply_2.Sep2          .              .            +INF            EPS         
+Supply_2.Oct2          .              .            +INF            EPS         
+Supply_2.Nov2          .              .            +INF            EPS         
+Supply_2.Dec2          .              .            +INF            EPS         
+Simple_1.Jan1          .           836.6500        +INF             .          
+Simple_1.Feb1          .           500.0000        +INF             .          
+Simple_1.Mar1          .           500.0000        +INF             .          
+Simple_1.Apr1          .           139.0000        +INF             .          
+Simple_1.May1          .           162.4000        +INF             .          
+Simple_1.Jun1          .           203.2500        +INF             .          
+Simple_1.Jul1          .           243.7000        +INF             .          
+Simple_1.Aug1          .           612.9000        +INF             .          
+Simple_1.Sep1          .           572.7500        +INF             .          
+Simple_1.Oct1          .           500.0000        +INF             .          
+Simple_1.Nov1          .           500.0000        +INF             .          
+Simple_1.Dec1          .           500.0000        +INF             .          
+Simple_1.Jan2          .           500.0000        +INF             .          
+Simple_1.Feb2          .           500.0000        +INF             .          
+Simple_1.Mar2          .           500.0000        +INF             .          
+Simple_1.Apr2          .           139.0000        +INF             .          
+Simple_1.May2          .           162.4000        +INF             .          
+Simple_1.Jun2          .           203.2500        +INF             .          
+Simple_1.Jul2          .           243.7000        +INF             .          
+Simple_1.Aug2          .           590.0000        +INF             .          
+Simple_1.Sep2          .           316.0000        +INF             .          
+Simple_1.Oct2          .           338.0000        +INF             .          
+Simple_1.Nov2          .           181.0000        +INF             .          
+Simple_1.Dec2          .           128.0000        +INF             .          
+Simple_2.Jan1          .           836.6500        +INF             .          
+Simple_2.Feb1          .           500.0000        +INF             .          
+Simple_2.Mar1          .           500.0000        +INF             .          
+Simple_2.Apr1          .            74.5000        +INF             .          
+Simple_2.May1          .            52.6000        +INF             .          
+Simple_2.Jun1          .            18.8500        +INF             .          
+Simple_2.Jul1          .              .            +INF            EPS         
+Simple_2.Aug1          .           412.0000        +INF             .          
+Simple_2.Sep1          .           473.2500        +INF             .          
+Simple_2.Oct1          .           500.0000        +INF             .          
+Simple_2.Nov1          .           500.0000        +INF             .          
+Simple_2.Dec1          .           500.0000        +INF             .          
+Simple_2.Jan2          .           500.0000        +INF             .          
+Simple_2.Feb2          .           500.0000        +INF             .          
+Simple_2.Mar2          .           500.0000        +INF             .          
+Simple_2.Apr2          .            74.5000        +INF             .          
+Simple_2.May2          .            52.6000        +INF             .          
+Simple_2.Jun2          .            18.8500        +INF             .          
+Simple_2.Jul2          .              .            +INF            EPS         
+Simple_2.Aug2          .           389.1000        +INF             .          
+Simple_2.Sep2          .           216.5000        +INF             .          
+Simple_2.Oct2          .           338.0000        +INF             .          
+Simple_2.Nov2          .           181.0000        +INF             .          
+Simple_2.Dec2          .           128.0000        +INF             .          
+Simple_3.Jan1          .           836.6500        +INF             .          
+Simple_3.Feb1          .           500.0000        +INF             .          
+Simple_3.Mar1          .           500.0000        +INF             .          
+Simple_3.Apr1          .           106.7500        +INF             .          
+Simple_3.May1          .           107.5000        +INF             .          
+Simple_3.Jun1          .           111.0500        +INF             .          
+Simple_3.Jul1          .           121.8500        +INF             .          
+Simple_3.Aug1          .           512.4500        +INF             .          
+Simple_3.Sep1          .           523.0000        +INF             .          
+Simple_3.Oct1          .           500.0000        +INF             .          
+Simple_3.Nov1          .           500.0000        +INF             .          
+Simple_3.Dec1          .           500.0000        +INF             .          
+Simple_3.Jan2          .           500.0000        +INF             .          
+Simple_3.Feb2          .           500.0000        +INF             .          
+Simple_3.Mar2          .           500.0000        +INF             .          
+Simple_3.Apr2          .           106.7500        +INF             .          
+Simple_3.May2          .           107.5000        +INF             .          
+Simple_3.Jun2          .           111.0500        +INF             .          
+Simple_3.Jul2          .           121.8500        +INF             .          
+Simple_3.Aug2          .           489.5500        +INF             .          
+Simple_3.Sep2          .           266.2500        +INF             .          
+Simple_3.Oct2          .           338.0000        +INF             .          
+Simple_3.Nov2          .           181.0000        +INF             .          
+Simple_3.Dec2          .           128.0000        +INF             .          
+Simple_4.Jan1          .           836.6500        +INF             .          
+Simple_4.Feb1          .           500.0000        +INF             .          
+Simple_4.Mar1          .           500.0000        +INF             .          
+Simple_4.Apr1          .            93.2500        +INF             .          
+Simple_4.May1          .            92.5000        +INF             .          
+Simple_4.Jun1          .            88.9500        +INF             .          
+Simple_4.Jul1          .            95.8500        +INF             .          
+Simple_4.Aug1          .           487.5500        +INF             .          
+Simple_4.Sep1          .           510.0000        +INF             .          
+Simple_4.Oct1          .           500.0000        +INF             .          
+Simple_4.Nov1          .           500.0000        +INF             .          
+Simple_4.Dec1          .           500.0000        +INF             .          
+Simple_4.Jan2          .           500.0000        +INF             .          
+Simple_4.Feb2          .           500.0000        +INF             .          
+Simple_4.Mar2          .           500.0000        +INF             .          
+Simple_4.Apr2          .            93.2500        +INF             .          
+Simple_4.May2          .            92.5000        +INF             .          
+Simple_4.Jun2          .            88.9500        +INF             .          
+Simple_4.Jul2          .            95.8500        +INF             .          
+Simple_4.Aug2          .           464.6500        +INF             .          
+Simple_4.Sep2          .           253.2500        +INF             .          
+Simple_4.Oct2          .           338.0000        +INF             .          
+Simple_4.Nov2          .           181.0000        +INF             .          
+Simple_4.Dec2          .           128.0000        +INF             .          
+Simple_5.Jan1          .           336.6500        +INF             .          
+Simple_5.Feb1          .              .            +INF            EPS         
+Simple_5.Mar1          .              .            +INF            EPS         
+Simple_5.Apr1          .              .            +INF            EPS         
+Simple_5.May1          .              .            +INF            EPS         
+Simple_5.Jun1          .              .            +INF            EPS         
+Simple_5.Jul1          .             8.8500        +INF             .          
+Simple_5.Aug1          .              .            +INF            EPS         
+Simple_5.Sep1          .            16.5000        +INF             .          
+Simple_5.Oct1          .              .            +INF            EPS         
+Simple_5.Nov1          .              .            +INF            EPS         
+Simple_5.Dec1          .              .            +INF            EPS         
+Simple_5.Jan2          .              .            +INF            EPS         
+Simple_5.Feb2          .              .            +INF            EPS         
+Simple_5.Mar2          .              .            +INF            EPS         
+Simple_5.Apr2          .              .            +INF            EPS         
+Simple_5.May2          .              .            +INF            EPS         
+Simple_5.Jun2          .              .            +INF            EPS         
+Simple_5.Jul2          .             8.8500        +INF             .          
+Simple_5.Aug2          .              .            +INF           -0.0020      
+Simple_5.Sep2          .              .            +INF           -0.0020      
+Simple_5.Oct2          .              .            +INF           -0.0020      
+Simple_5.Nov2          .              .            +INF           -0.0020      
+Simple_5.Dec2          .              .            +INF           -0.0020      
+Divert_1.Jan1          .           836.6500        +INF             .          
+Divert_1.Feb1          .           500.0000        +INF             .          
+Divert_1.Mar1          .           500.0000        +INF             .          
+Divert_1.Apr1          .            74.5000        +INF             .          
+Divert_1.May1          .            52.6000        +INF             .          
+Divert_1.Jun1          .            18.8500        +INF             .          
+Divert_1.Jul1          .              .            +INF             .          
+Divert_1.Aug1          .           412.0000        +INF             .          
+Divert_1.Sep1          .           473.2500        +INF             .          
+Divert_1.Oct1          .           500.0000        +INF             .          
+Divert_1.Nov1          .           500.0000        +INF             .          
+Divert_1.Dec1          .           500.0000        +INF             .          
+Divert_1.Jan2          .           500.0000        +INF             .          
+Divert_1.Feb2          .           500.0000        +INF             .          
+Divert_1.Mar2          .           500.0000        +INF             .          
+Divert_1.Apr2          .            74.5000        +INF             .          
+Divert_1.May2          .            52.6000        +INF             .          
+Divert_1.Jun2          .            18.8500        +INF             .          
+Divert_1.Jul2          .              .            +INF             .          
+Divert_1.Aug2          .           389.1000        +INF             .          
+Divert_1.Sep2          .           216.5000        +INF             .          
+Divert_1.Oct2          .           338.0000        +INF             .          
+Divert_1.Nov2          .           181.0000        +INF             .          
+Divert_1.Dec2          .           128.0000        +INF             .          
+Divert_2.Jan1          .           836.6500        +INF             .          
+Divert_2.Feb1          .           500.0000        +INF             .          
+Divert_2.Mar1          .           500.0000        +INF             .          
+Divert_2.Apr1          .            93.2500        +INF             .          
+Divert_2.May1          .            92.5000        +INF             .          
+Divert_2.Jun1          .            88.9500        +INF             .          
+Divert_2.Jul1          .            95.8500        +INF             .          
+Divert_2.Aug1          .           487.5500        +INF             .          
+Divert_2.Sep1          .           510.0000        +INF             .          
+Divert_2.Oct1          .           500.0000        +INF             .          
+Divert_2.Nov1          .           500.0000        +INF             .          
+Divert_2.Dec1          .           500.0000        +INF             .          
+Divert_2.Jan2          .           500.0000        +INF             .          
+Divert_2.Feb2          .           500.0000        +INF             .          
+Divert_2.Mar2          .           500.0000        +INF             .          
+Divert_2.Apr2          .            93.2500        +INF             .          
+Divert_2.May2          .            92.5000        +INF             .          
+Divert_2.Jun2          .            88.9500        +INF             .          
+Divert_2.Jul2          .            95.8500        +INF             .          
+Divert_2.Aug2          .           464.6500        +INF             .          
+Divert_2.Sep2          .           253.2500        +INF             .          
+Divert_2.Oct2          .           338.0000        +INF             .          
+Divert_2.Nov2          .           181.0000        +INF             .          
+Divert_2.Dec2          .           128.0000        +INF             .          
+Res_1   .Jan1          .           128.0000        +INF             .          
+Res_1   .Feb1          .           125.0000        +INF             .          
+Res_1   .Mar1          .           234.0000        +INF             .          
+Res_1   .Apr1          .           360.0000        +INF             .          
+Res_1   .May1          .           541.0000        +INF             .          
+Res_1   .Jun1          .           645.0000        +INF             .          
+Res_1   .Jul1          .           807.0000        +INF             .          
+Res_1   .Aug1          .           512.0000        +INF             .          
+Res_1   .Sep1          .           267.0000        +INF             .          
+Res_1   .Oct1          .           210.0000        +INF             .          
+Res_1   .Nov1          .           181.0000        +INF             .          
+Res_1   .Dec1          .           128.0000        +INF             .          
+Res_1   .Jan2          .           128.0000        +INF             .          
+Res_1   .Feb2          .           125.0000        +INF             .          
+Res_1   .Mar2          .           234.0000        +INF             .          
+Res_1   .Apr2          .           360.0000        +INF             .          
+Res_1   .May2          .           541.0000        +INF             .          
+Res_1   .Jun2          .           645.0000        +INF             .          
+Res_1   .Jul2          .           807.0000        +INF             .          
+Res_1   .Aug2          .           512.0000        +INF             .          
+Res_1   .Sep2          .           267.0000        +INF             .          
+Res_1   .Oct2          .           210.0000        +INF             .          
+Res_1   .Nov2          .           181.0000        +INF             .          
+Res_1   .Dec2          .           128.0000        +INF             .          
+Res_2   .Jan1          .            39.0000        +INF             .          
+Res_2   .Feb1          .            39.0000        +INF             .          
+Res_2   .Mar1          .            52.0000        +INF             .          
+Res_2   .Apr1          .           121.0000        +INF             .          
+Res_2   .May1          .           168.0000        +INF             .          
+Res_2   .Jun1          .           144.0000        +INF             .          
+Res_2   .Jul1          .           105.0000        +INF             .          
+Res_2   .Aug1          .            78.0000        +INF             .          
+Res_2   .Sep1          .            49.0000        +INF             .          
+Res_2   .Oct1          .            44.0000        +INF             .          
+Res_2   .Nov1          .            45.0000        +INF             .          
+Res_2   .Dec1          .            39.0000        +INF             .          
+Res_2   .Jan2          .            39.0000        +INF             .          
+Res_2   .Feb2          .            39.0000        +INF             .          
+Res_2   .Mar2          .            52.0000        +INF             .          
+Res_2   .Apr2          .           121.0000        +INF             .          
+Res_2   .May2          .           168.0000        +INF             .          
+Res_2   .Jun2          .           144.0000        +INF             .          
+Res_2   .Jul2          .           105.0000        +INF             .          
+Res_2   .Aug2          .            78.0000        +INF             .          
+Res_2   .Sep2          .            49.0000        +INF             .          
+Res_2   .Oct2          .            44.0000        +INF             .          
+Res_2   .Nov2          .            45.0000        +INF             .          
+Res_2   .Dec2          .            39.0000        +INF             .          
+Res_3   .Jan1          .           708.6500        +INF             .          
+Res_3   .Feb1          .              .            +INF             .          
+Res_3   .Mar1          .           778.3500        +INF             .          
+Res_3   .Apr1          .              .            +INF             .          
+Res_3   .May1          .              .            +INF             .          
+Res_3   .Jun1          .           546.0000        +INF             .          
+Res_3   .Jul1          .           807.0000        +INF             .          
+Res_3   .Aug1          .           512.0000        +INF             .          
+Res_3   .Sep1          .           267.0000        +INF             .          
+Res_3   .Oct1          .           210.0000        +INF             .          
+Res_3   .Nov1          .           181.0000        +INF             .          
+Res_3   .Dec1          .           887.6500        +INF             .          
+Res_3   .Jan2          .           122.0000        +INF             .          
+Res_3   .Feb2          .           371.3500        +INF             .          
+Res_3   .Mar2          .              .            +INF             .          
+Res_3   .Apr2          .           594.0000        +INF             .          
+Res_3   .May2          .           541.0000        +INF             .          
+Res_3   .Jun2          .           230.6500        +INF             .          
+Res_3   .Jul2          .           221.3500        +INF             .          
+Res_3   .Aug2          .           512.0000        +INF             .          
+Res_3   .Sep2          .           267.0000        +INF             .          
+Res_3   .Oct2          .           210.0000        +INF             .          
+Res_3   .Nov2          .           181.0000        +INF             .          
+Res_3   .Dec2          .           128.0000        +INF             .          
+Res_4   .Jan1          .           339.0000        +INF             .          
+Res_4   .Feb1          .            39.0000        +INF             .          
+Res_4   .Mar1          .              .            +INF             .          
+Res_4   .Apr1          .           173.0000        +INF             .          
+Res_4   .May1          .           168.0000        +INF             .          
+Res_4   .Jun1          .            76.0000        +INF             .          
+Res_4   .Jul1          .              .            +INF             .          
+Res_4   .Aug1          .              .            +INF             .          
+Res_4   .Sep1          .              .            +INF             .          
+Res_4   .Oct1          .           128.0000        +INF             .          
+Res_4   .Nov1          .              .            +INF             .          
+Res_4   .Dec1          .              .            +INF             .          
+Res_4   .Jan2          .           339.0000        +INF             .          
+Res_4   .Feb2          .            39.0000        +INF             .          
+Res_4   .Mar2          .              .            +INF             .          
+Res_4   .Apr2          .           173.0000        +INF             .          
+Res_4   .May2          .            94.6500        +INF             .          
+Res_4   .Jun2          .              .            +INF             .          
+Res_4   .Jul2          .            22.3500        +INF             .          
+Res_4   .Aug2          .            78.0000        +INF             .          
+Res_4   .Sep2          .            49.0000        +INF             .          
+Res_4   .Oct2          .           128.0000        +INF             .          
+Res_4   .Nov2          .              .            +INF             .          
+Res_4   .Dec2          .              .            +INF             .          
+Res_5   .Jan1          .           736.6500        +INF             .          
+Res_5   .Feb1          .          1000.0000        +INF             .          
+Res_5   .Mar1          .              .            +INF             .          
+Res_5   .Apr1          .           139.0000        +INF             .          
+Res_5   .May1          .           365.6500        +INF             .          
+Res_5   .Jun1          .              .            +INF             .          
+Res_5   .Jul1          .           743.7000        +INF             .          
+Res_5   .Aug1          .           612.9000        +INF             .          
+Res_5   .Sep1          .           166.1000        +INF             .          
+Res_5   .Oct1          .           906.6500        +INF             .          
+Res_5   .Nov1          .           500.0000        +INF             .          
+Res_5   .Dec1          .              .            +INF             .          
+Res_5   .Jan2          .           500.0000        +INF             .          
+Res_5   .Feb2          .           500.0000        +INF             .          
+Res_5   .Mar2          .           871.3500        +INF             .          
+Res_5   .Apr2          .           267.6500        +INF             .          
+Res_5   .May2          .           135.0000        +INF             .          
+Res_5   .Jun2          .           230.6500        +INF             .          
+Res_5   .Jul2          .           243.7000        +INF             .          
+Res_5   .Aug2          .           590.0000        +INF             .          
+Res_5   .Sep2          .           316.0000        +INF             .          
+Res_5   .Oct2          .           338.0000        +INF             .          
+Res_5   .Nov2          .           181.0000        +INF             .          
+Res_5   .Dec2          .           128.0000        +INF             .          
+Outlet  .Jan1          .           336.6500        +INF             .          
+Outlet  .Feb1          .              .            +INF             .          
+Outlet  .Mar1          .              .            +INF             .          
+Outlet  .Apr1          .              .            +INF             .          
+Outlet  .May1          .              .            +INF             .          
+Outlet  .Jun1          .              .            +INF             .          
+Outlet  .Jul1          .             8.8500        +INF             .          
+Outlet  .Aug1          .              .            +INF             .          
+Outlet  .Sep1          .            16.5000        +INF             .          
+Outlet  .Oct1          .              .            +INF             .          
+Outlet  .Nov1          .              .            +INF             .          
+Outlet  .Dec1          .              .            +INF             .          
+Outlet  .Jan2          .              .            +INF             .          
+Outlet  .Feb2          .              .            +INF             .          
+Outlet  .Mar2          .              .            +INF             .          
+Outlet  .Apr2          .              .            +INF             .          
+Outlet  .May2          .              .            +INF             .          
+Outlet  .Jun2          .              .            +INF             .          
+Outlet  .Jul2          .             8.8500        +INF             .          
+Outlet  .Aug2          .              .            +INF             .          
+Outlet  .Sep2          .              .            +INF             .          
+Outlet  .Oct2          .              .            +INF             .          
+Outlet  .Nov2          .              .            +INF             .          
+Outlet  .Dec2          .              .            +INF             .          
+
+---- VAR R  Releases
+
+                     LOWER          LEVEL          UPPER         MARGINAL
+
+Supply_1.Jan1          .           128.0000        +INF             .          
+Supply_1.Feb1          .           125.0000        +INF             .          
+Supply_1.Mar1          .           234.0000        +INF             .          
+Supply_1.Apr1          .           360.0000        +INF             .          
+Supply_1.May1          .           541.0000        +INF             .          
+Supply_1.Jun1          .           645.0000        +INF             .          
+Supply_1.Jul1          .           807.0000        +INF             .          
+Supply_1.Aug1          .           512.0000        +INF             .          
+Supply_1.Sep1          .           267.0000        +INF             .          
+Supply_1.Oct1          .           210.0000        +INF             .          
+Supply_1.Nov1          .           181.0000        +INF             .          
+Supply_1.Dec1          .           128.0000        +INF             .          
+Supply_1.Jan2          .           128.0000        +INF             .          
+Supply_1.Feb2          .           125.0000        +INF             .          
+Supply_1.Mar2          .           234.0000        +INF             .          
+Supply_1.Apr2          .           360.0000        +INF             .          
+Supply_1.May2          .           541.0000        +INF             .          
+Supply_1.Jun2          .           645.0000        +INF             .          
+Supply_1.Jul2          .           807.0000        +INF             .          
+Supply_1.Aug2          .           512.0000        +INF             .          
+Supply_1.Sep2          .           267.0000        +INF             .          
+Supply_1.Oct2          .           210.0000        +INF             .          
+Supply_1.Nov2          .           181.0000        +INF             .          
+Supply_1.Dec2          .           128.0000        +INF             .          
+Supply_2.Jan1          .            39.0000        +INF             .          
+Supply_2.Feb1          .            39.0000        +INF             .          
+Supply_2.Mar1          .            52.0000        +INF             .          
+Supply_2.Apr1          .           121.0000        +INF             .          
+Supply_2.May1          .           168.0000        +INF             .          
+Supply_2.Jun1          .           144.0000        +INF             .          
+Supply_2.Jul1          .           105.0000        +INF             .          
+Supply_2.Aug1          .            78.0000        +INF             .          
+Supply_2.Sep1          .            49.0000        +INF             .          
+Supply_2.Oct1          .            44.0000        +INF             .          
+Supply_2.Nov1          .            45.0000        +INF             .          
+Supply_2.Dec1          .            39.0000        +INF             .          
+Supply_2.Jan2          .            39.0000        +INF             .          
+Supply_2.Feb2          .            39.0000        +INF             .          
+Supply_2.Mar2          .            52.0000        +INF             .          
+Supply_2.Apr2          .           121.0000        +INF             .          
+Supply_2.May2          .           168.0000        +INF             .          
+Supply_2.Jun2          .           144.0000        +INF             .          
+Supply_2.Jul2          .           105.0000        +INF             .          
+Supply_2.Aug2          .            78.0000        +INF             .          
+Supply_2.Sep2          .            49.0000        +INF             .          
+Supply_2.Oct2          .            44.0000        +INF             .          
+Supply_2.Nov2          .            45.0000        +INF             .          
+Supply_2.Dec2          .            39.0000        +INF             .          
+Simple_1.Jan1          .           836.6500        +INF             .          
+Simple_1.Feb1          .           500.0000        +INF             .          
+Simple_1.Mar1          .           500.0000        +INF             .          
+Simple_1.Apr1          .           139.0000        +INF             .          
+Simple_1.May1          .           162.4000        +INF             .          
+Simple_1.Jun1          .           203.2500        +INF             .          
+Simple_1.Jul1          .           243.7000        +INF             .          
+Simple_1.Aug1          .           612.9000        +INF             .          
+Simple_1.Sep1          .           572.7500        +INF             .          
+Simple_1.Oct1          .           500.0000        +INF             .          
+Simple_1.Nov1          .           500.0000        +INF             .          
+Simple_1.Dec1          .           500.0000        +INF             .          
+Simple_1.Jan2          .           500.0000        +INF             .          
+Simple_1.Feb2          .           500.0000        +INF             .          
+Simple_1.Mar2          .           500.0000        +INF             .          
+Simple_1.Apr2          .           139.0000        +INF             .          
+Simple_1.May2          .           162.4000        +INF             .          
+Simple_1.Jun2          .           203.2500        +INF             .          
+Simple_1.Jul2          .           243.7000        +INF             .          
+Simple_1.Aug2          .           590.0000        +INF             .          
+Simple_1.Sep2          .           316.0000        +INF             .          
+Simple_1.Oct2          .           338.0000        +INF             .          
+Simple_1.Nov2          .           181.0000        +INF             .          
+Simple_1.Dec2          .           128.0000        +INF             .          
+Simple_2.Jan1          .           836.6500        +INF             .          
+Simple_2.Feb1          .           500.0000        +INF             .          
+Simple_2.Mar1          .           500.0000        +INF             .          
+Simple_2.Apr1          .            74.5000        +INF             .          
+Simple_2.May1          .            52.6000        +INF             .          
+Simple_2.Jun1          .            18.8500        +INF             .          
+Simple_2.Jul1          .              .            +INF             .          
+Simple_2.Aug1          .           412.0000        +INF             .          
+Simple_2.Sep1          .           473.2500        +INF             .          
+Simple_2.Oct1          .           500.0000        +INF             .          
+Simple_2.Nov1          .           500.0000        +INF             .          
+Simple_2.Dec1          .           500.0000        +INF             .          
+Simple_2.Jan2          .           500.0000        +INF             .          
+Simple_2.Feb2          .           500.0000        +INF             .          
+Simple_2.Mar2          .           500.0000        +INF             .          
+Simple_2.Apr2          .            74.5000        +INF             .          
+Simple_2.May2          .            52.6000        +INF             .          
+Simple_2.Jun2          .            18.8500        +INF             .          
+Simple_2.Jul2          .              .            +INF             .          
+Simple_2.Aug2          .           389.1000        +INF             .          
+Simple_2.Sep2          .           216.5000        +INF             .          
+Simple_2.Oct2          .           338.0000        +INF             .          
+Simple_2.Nov2          .           181.0000        +INF             .          
+Simple_2.Dec2          .           128.0000        +INF             .          
+Simple_3.Jan1          .           836.6500        +INF             .          
+Simple_3.Feb1          .           500.0000        +INF             .          
+Simple_3.Mar1          .           500.0000        +INF             .          
+Simple_3.Apr1          .           106.7500        +INF             .          
+Simple_3.May1          .           107.5000        +INF             .          
+Simple_3.Jun1          .           111.0500        +INF             .          
+Simple_3.Jul1          .           121.8500        +INF             .          
+Simple_3.Aug1          .           512.4500        +INF             .          
+Simple_3.Sep1          .           523.0000        +INF             .          
+Simple_3.Oct1          .           500.0000        +INF             .          
+Simple_3.Nov1          .           500.0000        +INF             .          
+Simple_3.Dec1          .           500.0000        +INF             .          
+Simple_3.Jan2          .           500.0000        +INF             .          
+Simple_3.Feb2          .           500.0000        +INF             .          
+Simple_3.Mar2          .           500.0000        +INF             .          
+Simple_3.Apr2          .           106.7500        +INF             .          
+Simple_3.May2          .           107.5000        +INF             .          
+Simple_3.Jun2          .           111.0500        +INF             .          
+Simple_3.Jul2          .           121.8500        +INF             .          
+Simple_3.Aug2          .           489.5500        +INF             .          
+Simple_3.Sep2          .           266.2500        +INF             .          
+Simple_3.Oct2          .           338.0000        +INF             .          
+Simple_3.Nov2          .           181.0000        +INF             .          
+Simple_3.Dec2          .           128.0000        +INF             .          
+Simple_4.Jan1          .           836.6500        +INF             .          
+Simple_4.Feb1          .           500.0000        +INF             .          
+Simple_4.Mar1          .           500.0000        +INF             .          
+Simple_4.Apr1          .            93.2500        +INF             .          
+Simple_4.May1          .            92.5000        +INF             .          
+Simple_4.Jun1          .            88.9500        +INF             .          
+Simple_4.Jul1          .            95.8500        +INF             .          
+Simple_4.Aug1          .           487.5500        +INF             .          
+Simple_4.Sep1          .           510.0000        +INF             .          
+Simple_4.Oct1          .           500.0000        +INF             .          
+Simple_4.Nov1          .           500.0000        +INF             .          
+Simple_4.Dec1          .           500.0000        +INF             .          
+Simple_4.Jan2          .           500.0000        +INF             .          
+Simple_4.Feb2          .           500.0000        +INF             .          
+Simple_4.Mar2          .           500.0000        +INF             .          
+Simple_4.Apr2          .            93.2500        +INF             .          
+Simple_4.May2          .            92.5000        +INF             .          
+Simple_4.Jun2          .            88.9500        +INF             .          
+Simple_4.Jul2          .            95.8500        +INF             .          
+Simple_4.Aug2          .           464.6500        +INF             .          
+Simple_4.Sep2          .           253.2500        +INF             .          
+Simple_4.Oct2          .           338.0000        +INF             .          
+Simple_4.Nov2          .           181.0000        +INF             .          
+Simple_4.Dec2          .           128.0000        +INF             .          
+Simple_5.Jan1          .           336.6500        +INF             .          
+Simple_5.Feb1          .              .            +INF             .          
+Simple_5.Mar1          .              .            +INF             .          
+Simple_5.Apr1          .              .            +INF             .          
+Simple_5.May1          .              .            +INF             .          
+Simple_5.Jun1          .              .            +INF             .          
+Simple_5.Jul1          .             8.8500        +INF             .          
+Simple_5.Aug1          .              .            +INF             .          
+Simple_5.Sep1          .            16.5000        +INF             .          
+Simple_5.Oct1          .              .            +INF             .          
+Simple_5.Nov1          .              .            +INF             .          
+Simple_5.Dec1          .              .            +INF             .          
+Simple_5.Jan2          .              .            +INF             .          
+Simple_5.Feb2          .              .            +INF             .          
+Simple_5.Mar2          .              .            +INF             .          
+Simple_5.Apr2          .              .            +INF             .          
+Simple_5.May2          .              .            +INF             .          
+Simple_5.Jun2          .              .            +INF             .          
+Simple_5.Jul2          .             8.8500        +INF             .          
+Simple_5.Aug2          .              .            +INF             .          
+Simple_5.Sep2          .              .            +INF             .          
+Simple_5.Oct2          .              .            +INF             .          
+Simple_5.Nov2          .              .            +INF             .          
+Simple_5.Dec2          .              .            +INF             .          
+Divert_1.Jan1          .              .            +INF            EPS         
+Divert_1.Feb1          .              .            +INF            EPS         
+Divert_1.Mar1          .              .            +INF            EPS         
+Divert_1.Apr1          .            32.2500        +INF             .          
+Divert_1.May1          .            54.9000        +INF             .          
+Divert_1.Jun1          .            92.2000        +INF             .          
+Divert_1.Jul1          .           121.8500        +INF             .          
+Divert_1.Aug1          .           100.4500        +INF             .          
+Divert_1.Sep1          .            49.7500        +INF             .          
+Divert_1.Oct1          .              .            +INF            EPS         
+Divert_1.Nov1          .              .            +INF            EPS         
+Divert_1.Dec1          .              .            +INF            EPS         
+Divert_1.Jan2          .              .            +INF            EPS         
+Divert_1.Feb2          .              .            +INF            EPS         
+Divert_1.Mar2          .              .            +INF            EPS         
+Divert_1.Apr2          .            32.2500        +INF             .          
+Divert_1.May2          .            54.9000        +INF             .          
+Divert_1.Jun2          .            92.2000        +INF             .          
+Divert_1.Jul2          .           121.8500        +INF             .          
+Divert_1.Aug2          .           100.4500        +INF             .          
+Divert_1.Sep2          .            49.7500        +INF             .          
+Divert_1.Oct2          .              .            +INF             .          
+Divert_1.Nov2          .              .            +INF             .          
+Divert_1.Dec2          .              .            +INF             .          
+Divert_2.Jan1          .              .            +INF            EPS         
+Divert_2.Feb1          .              .            +INF            EPS         
+Divert_2.Mar1          .              .            +INF            EPS         
+Divert_2.Apr1          .             6.7500        +INF             .          
+Divert_2.May1          .             7.5000        +INF             .          
+Divert_2.Jun1          .            11.0500        +INF             .          
+Divert_2.Jul1          .            13.0000        +INF             .          
+Divert_2.Aug1          .            12.4500        +INF             .          
+Divert_2.Sep1          .             6.5000        +INF             .          
+Divert_2.Oct1          .              .            +INF            EPS         
+Divert_2.Nov1          .              .            +INF            EPS         
+Divert_2.Dec1          .              .            +INF            EPS         
+Divert_2.Jan2          .              .            +INF            EPS         
+Divert_2.Feb2          .              .            +INF            EPS         
+Divert_2.Mar2          .              .            +INF            EPS         
+Divert_2.Apr2          .             6.7500        +INF             .          
+Divert_2.May2          .             7.5000        +INF             .          
+Divert_2.Jun2          .            11.0500        +INF             .          
+Divert_2.Jul2          .            13.0000        +INF             .          
+Divert_2.Aug2          .            12.4500        +INF             .          
+Divert_2.Sep2          .             6.5000        +INF             .          
+Divert_2.Oct2          .              .            +INF             .          
+Divert_2.Nov2          .              .            +INF             .          
+Divert_2.Dec2          .              .            +INF             .          
+Res_1   .Jan1          .           708.6500        +INF             .          
+Res_1   .Feb1          .              .            +INF            EPS         
+Res_1   .Mar1          .           778.3500        +INF             .          
+Res_1   .Apr1          .              .            +INF            EPS         
+Res_1   .May1          .              .            +INF            EPS         
+Res_1   .Jun1          .           546.0000        +INF             .          
+Res_1   .Jul1          .           807.0000        +INF             .          
+Res_1   .Aug1          .           512.0000        +INF             .          
+Res_1   .Sep1          .           267.0000        +INF             .          
+Res_1   .Oct1          .           210.0000        +INF             .          
+Res_1   .Nov1          .           181.0000        +INF             .          
+Res_1   .Dec1          .           887.6500        +INF             .          
+Res_1   .Jan2          .           122.0000        +INF             .          
+Res_1   .Feb2          .           371.3500        +INF             .          
+Res_1   .Mar2          .              .            +INF            EPS         
+Res_1   .Apr2          .           594.0000        +INF             .          
+Res_1   .May2          .           541.0000        +INF             .          
+Res_1   .Jun2          .           230.6500        +INF             .          
+Res_1   .Jul2          .           221.3500        +INF             .          
+Res_1   .Aug2          .           512.0000        +INF             .          
+Res_1   .Sep2          .           267.0000        +INF             .          
+Res_1   .Oct2          .           210.0000        +INF             .          
+Res_1   .Nov2          .           181.0000        +INF             .          
+Res_1   .Dec2          .           128.0000        +INF             .          
+Res_2   .Jan1          .           339.0000        +INF             .          
+Res_2   .Feb1          .            39.0000        +INF             .          
+Res_2   .Mar1          .              .            +INF            EPS         
+Res_2   .Apr1          .           173.0000        +INF             .          
+Res_2   .May1          .           168.0000        +INF             .          
+Res_2   .Jun1          .            76.0000        +INF             .          
+Res_2   .Jul1          .              .            +INF            EPS         
+Res_2   .Aug1          .              .            +INF            EPS         
+Res_2   .Sep1          .              .            +INF            EPS         
+Res_2   .Oct1          .           128.0000        +INF             .          
+Res_2   .Nov1          .              .            +INF            EPS         
+Res_2   .Dec1          .              .            +INF             .          
+Res_2   .Jan2          .           339.0000        +INF             .          
+Res_2   .Feb2          .            39.0000        +INF             .          
+Res_2   .Mar2          .              .            +INF            EPS         
+Res_2   .Apr2          .           173.0000        +INF             .          
+Res_2   .May2          .            94.6500        +INF             .          
+Res_2   .Jun2          .              .            +INF            EPS         
+Res_2   .Jul2          .            22.3500        +INF             .          
+Res_2   .Aug2          .            78.0000        +INF             .          
+Res_2   .Sep2          .            49.0000        +INF             .          
+Res_2   .Oct2          .           128.0000        +INF             .          
+Res_2   .Nov2          .              .            +INF            EPS         
+Res_2   .Dec2          .              .            +INF            EPS         
+Res_3   .Jan1          .           247.6500        +INF             .          
+Res_3   .Feb1          .           961.0000        +INF             .          
+Res_3   .Mar1          .              .            +INF            EPS         
+Res_3   .Apr1          .            22.0000        +INF             .          
+Res_3   .May1          .           365.6500        +INF             .          
+Res_3   .Jun1          .              .            +INF            EPS         
+Res_3   .Jul1          .           743.7000        +INF             .          
+Res_3   .Aug1          .           612.9000        +INF             .          
+Res_3   .Sep1          .           166.1000        +INF             .          
+Res_3   .Oct1          .           778.6500        +INF             .          
+Res_3   .Nov1          .           500.0000        +INF             .          
+Res_3   .Dec1          .              .            +INF             .          
+Res_3   .Jan2          .           122.0000        +INF             .          
+Res_3   .Feb2          .           500.0000        +INF             .          
+Res_3   .Mar2          .           871.3500        +INF             .          
+Res_3   .Apr2          .              .            +INF            EPS         
+Res_3   .May2          .           135.0000        +INF             .          
+Res_3   .Jun2          .           230.6500        +INF             .          
+Res_3   .Jul2          .           221.3500        +INF             .          
+Res_3   .Aug2          .           512.0000        +INF             .          
+Res_3   .Sep2          .           267.0000        +INF             .          
+Res_3   .Oct2          .           210.0000        +INF             .          
+Res_3   .Nov2          .           181.0000        +INF             .          
+Res_3   .Dec2          .           128.0000        +INF             .          
+Res_4   .Jan1          .           489.0000        +INF             .          
+Res_4   .Feb1          .            39.0000        +INF             .          
+Res_4   .Mar1          .              .            +INF            EPS         
+Res_4   .Apr1          .           117.0000        +INF             .          
+Res_4   .May1          .              .            +INF            EPS         
+Res_4   .Jun1          .              .            +INF            EPS         
+Res_4   .Jul1          .              .            +INF            EPS         
+Res_4   .Aug1          .              .            +INF            EPS         
+Res_4   .Sep1          .              .            +INF             .          
+Res_4   .Oct1          .           128.0000        +INF             .          
+Res_4   .Nov1          .              .            +INF             .          
+Res_4   .Dec1          .              .            +INF            EPS         
+Res_4   .Jan2          .           378.0000        +INF             .          
+Res_4   .Feb2          .              .            +INF            EPS         
+Res_4   .Mar2          .              .            +INF            EPS         
+Res_4   .Apr2          .           267.6500        +INF             .          
+Res_4   .May2          .              .            +INF            EPS         
+Res_4   .Jun2          .              .            +INF             .          
+Res_4   .Jul2          .            22.3500        +INF             .          
+Res_4   .Aug2          .            78.0000        +INF             .          
+Res_4   .Sep2          .            49.0000        +INF             .          
+Res_4   .Oct2          .           128.0000        +INF             .          
+Res_4   .Nov2          .              .            +INF            EPS         
+Res_4   .Dec2          .              .            +INF             .          
+Res_5   .Jan1          .           836.6500        +INF             .          
+Res_5   .Feb1          .           500.0000        +INF             .          
+Res_5   .Mar1          .           500.0000        +INF             .          
+Res_5   .Apr1          .           139.0000        +INF             .          
+Res_5   .May1          .           162.4000        +INF             .          
+Res_5   .Jun1          .           203.2500        +INF             .          
+Res_5   .Jul1          .           243.7000        +INF             .          
+Res_5   .Aug1          .           612.9000        +INF             .          
+Res_5   .Sep1          .           572.7500        +INF             .          
+Res_5   .Oct1          .           500.0000        +INF             .          
+Res_5   .Nov1          .           500.0000        +INF             .          
+Res_5   .Dec1          .           500.0000        +INF             .          
+Res_5   .Jan2          .           500.0000        +INF             .          
+Res_5   .Feb2          .           500.0000        +INF             .          
+Res_5   .Mar2          .           500.0000        +INF             .          
+Res_5   .Apr2          .           139.0000        +INF             .          
+Res_5   .May2          .           162.4000        +INF             .          
+Res_5   .Jun2          .           203.2500        +INF             .          
+Res_5   .Jul2          .           243.7000        +INF             .          
+Res_5   .Aug2          .           590.0000        +INF             .          
+Res_5   .Sep2          .           316.0000        +INF             .          
+Res_5   .Oct2          .           338.0000        +INF             .          
+Res_5   .Nov2          .           181.0000        +INF             .          
+Res_5   .Dec2          .           128.0000        +INF             .          
+Outlet  .Jan1          .              .            +INF            EPS         
+Outlet  .Feb1          .              .            +INF            EPS         
+Outlet  .Mar1          .              .            +INF            EPS         
+Outlet  .Apr1          .              .            +INF            EPS         
+Outlet  .May1          .              .            +INF            EPS         
+Outlet  .Jun1          .              .            +INF            EPS         
+Outlet  .Jul1          .              .            +INF            EPS         
+Outlet  .Aug1          .              .            +INF            EPS         
+Outlet  .Sep1          .              .            +INF            EPS         
+Outlet  .Oct1          .              .            +INF            EPS         
+Outlet  .Nov1          .              .            +INF            EPS         
+Outlet  .Dec1          .              .            +INF            EPS         
+Outlet  .Jan2          .              .            +INF            EPS         
+Outlet  .Feb2          .              .            +INF            EPS         
+Outlet  .Mar2          .              .            +INF            EPS         
+Outlet  .Apr2          .              .            +INF            EPS         
+Outlet  .May2          .              .            +INF            EPS         
+Outlet  .Jun2          .              .            +INF            EPS         
+Outlet  .Jul2          .              .            +INF            EPS         
+Outlet  .Aug2          .              .            +INF            EPS         
+Outlet  .Sep2          .              .            +INF            EPS         
+Outlet  .Oct2          .              .            +INF            EPS         
+Outlet  .Nov2          .              .            +INF            EPS         
+Outlet  .Dec2          .              .            +INF            EPS         
+
+---- VAR S  Storages
+
+                  LOWER          LEVEL          UPPER         MARGINAL
+
+Res_1.Jan1          .           419.3500      1000.0000          .          
+Res_1.Feb1          .           544.3500      1000.0000          .          
+Res_1.Mar1          .              .          1000.0000         EPS         
+Res_1.Apr1          .           360.0000      1000.0000          .          
+Res_1.May1          .           901.0000      1000.0000          .          
+Res_1.Jun1          .          1000.0000      1000.0000         EPS         
+Res_1.Jul1          .          1000.0000      1000.0000         EPS         
+Res_1.Aug1          .          1000.0000      1000.0000         EPS         
+Res_1.Sep1          .          1000.0000      1000.0000         EPS         
+Res_1.Oct1          .          1000.0000      1000.0000         EPS         
+Res_1.Nov1          .          1000.0000      1000.0000         EPS         
+Res_1.Dec1          .           240.3500      1000.0000          .          
+Res_1.Jan2          .           246.3500      1000.0000          .          
+Res_1.Feb2          .              .          1000.0000         EPS         
+Res_1.Mar2          .           234.0000      1000.0000          .          
+Res_1.Apr2          .              .          1000.0000         EPS         
+Res_1.May2          .              .          1000.0000         EPS         
+Res_1.Jun2          .           414.3500      1000.0000          .          
+Res_1.Jul2          .          1000.0000      1000.0000         0.0020      
+Res_1.Aug2          .          1000.0000      1000.0000         EPS         
+Res_1.Sep2          .          1000.0000      1000.0000         EPS         
+Res_1.Oct2          .          1000.0000      1000.0000         EPS         
+Res_1.Nov2          .          1000.0000      1000.0000         EPS         
+Res_1.Dec2      1000.0000      1000.0000      1000.0000        -0.0020      
+Res_2.Jan1          .              .           300.0000         EPS         
+Res_2.Feb1          .              .           300.0000         EPS         
+Res_2.Mar1          .            52.0000       300.0000          .          
+Res_2.Apr1          .              .           300.0000         EPS         
+Res_2.May1          .              .           300.0000         EPS         
+Res_2.Jun1          .            68.0000       300.0000          .          
+Res_2.Jul1          .           173.0000       300.0000          .          
+Res_2.Aug1          .           251.0000       300.0000          .          
+Res_2.Sep1          .           300.0000       300.0000         EPS         
+Res_2.Oct1          .           216.0000       300.0000          .          
+Res_2.Nov1          .           261.0000       300.0000          .          
+Res_2.Dec1          .           300.0000       300.0000         EPS         
+Res_2.Jan2          .              .           300.0000         EPS         
+Res_2.Feb2          .              .           300.0000         EPS         
+Res_2.Mar2          .            52.0000       300.0000          .          
+Res_2.Apr2          .              .           300.0000         EPS         
+Res_2.May2          .            73.3500       300.0000          .          
+Res_2.Jun2          .           217.3500       300.0000          .          
+Res_2.Jul2          .           300.0000       300.0000         0.0020      
+Res_2.Aug2          .           300.0000       300.0000         EPS         
+Res_2.Sep2          .           300.0000       300.0000         EPS         
+Res_2.Oct2          .           216.0000       300.0000          .          
+Res_2.Nov2          .           261.0000       300.0000          .          
+Res_2.Dec2       300.0000       300.0000       300.0000        -0.0020      
+Res_3.Jan1          .           961.0000      1000.0000          .          
+Res_3.Feb1          .              .          1000.0000         EPS         
+Res_3.Mar1          .           778.3500      1000.0000          .          
+Res_3.Apr1          .           756.3500      1000.0000          .          
+Res_3.May1          .           390.7000      1000.0000          .          
+Res_3.Jun1          .           936.7000      1000.0000          .          
+Res_3.Jul1          .          1000.0000      1000.0000         EPS         
+Res_3.Aug1          .           899.1000      1000.0000          .          
+Res_3.Sep1          .          1000.0000      1000.0000         EPS         
+Res_3.Oct1          .           431.3500      1000.0000          .          
+Res_3.Nov1          .           112.3500      1000.0000          .          
+Res_3.Dec1          .          1000.0000      1000.0000         EPS         
+Res_3.Jan2          .          1000.0000      1000.0000         EPS         
+Res_3.Feb2          .           871.3500      1000.0000          .          
+Res_3.Mar2          .              .          1000.0000         EPS         
+Res_3.Apr2          .           594.0000      1000.0000          .          
+Res_3.May2          .          1000.0000      1000.0000         EPS         
+Res_3.Jun2          .          1000.0000      1000.0000         EPS         
+Res_3.Jul2          .          1000.0000      1000.0000         0.0020      
+Res_3.Aug2          .          1000.0000      1000.0000         EPS         
+Res_3.Sep2          .          1000.0000      1000.0000         EPS         
+Res_3.Oct2          .          1000.0000      1000.0000         EPS         
+Res_3.Nov2          .          1000.0000      1000.0000         EPS         
+Res_3.Dec2      1000.0000      1000.0000      1000.0000        -0.0020      
+Res_4.Jan1          .              .           300.0000         EPS         
+Res_4.Feb1          .              .           300.0000          .          
+Res_4.Mar1          .              .           300.0000         EPS         
+Res_4.Apr1          .            56.0000       300.0000          .          
+Res_4.May1          .           224.0000       300.0000          .          
+Res_4.Jun1          .           300.0000       300.0000          .          
+Res_4.Jul1          .           300.0000       300.0000         EPS         
+Res_4.Aug1          .           300.0000       300.0000          .          
+Res_4.Sep1          .           300.0000       300.0000         EPS         
+Res_4.Oct1          .           300.0000       300.0000         EPS         
+Res_4.Nov1          .           300.0000       300.0000         EPS         
+Res_4.Dec1          .           300.0000       300.0000         EPS         
+Res_4.Jan2          .           261.0000       300.0000          .          
+Res_4.Feb2          .           300.0000       300.0000          .          
+Res_4.Mar2          .           300.0000       300.0000         EPS         
+Res_4.Apr2          .           205.3500       300.0000          .          
+Res_4.May2          .           300.0000       300.0000         EPS         
+Res_4.Jun2          .           300.0000       300.0000         EPS         
+Res_4.Jul2          .           300.0000       300.0000         0.0020      
+Res_4.Aug2          .           300.0000       300.0000         EPS         
+Res_4.Sep2          .           300.0000       300.0000         EPS         
+Res_4.Oct2          .           300.0000       300.0000          .          
+Res_4.Nov2          .           300.0000       300.0000         EPS         
+Res_4.Dec2       300.0000       300.0000       300.0000        -0.0020      
+Res_5.Jan1          .              .           500.0000         EPS         
+Res_5.Feb1          .           500.0000       500.0000          .          
+Res_5.Mar1          .              .           500.0000         EPS         
+Res_5.Apr1          .              .           500.0000         EPS         
+Res_5.May1          .           203.2500       500.0000          .          
+Res_5.Jun1          .              .           500.0000         EPS         
+Res_5.Jul1          .           500.0000       500.0000         EPS         
+Res_5.Aug1          .           500.0000       500.0000         EPS         
+Res_5.Sep1          .            93.3500       500.0000          .          
+Res_5.Oct1          .           500.0000       500.0000         EPS         
+Res_5.Nov1          .           500.0000       500.0000         EPS         
+Res_5.Dec1          .              .           500.0000         EPS         
+Res_5.Jan2          .              .           500.0000         EPS         
+Res_5.Feb2          .              .           500.0000         EPS         
+Res_5.Mar2          .           371.3500       500.0000          .          
+Res_5.Apr2          .           500.0000       500.0000         EPS         
+Res_5.May2          .           472.6000       500.0000          .          
+Res_5.Jun2          .           500.0000       500.0000         EPS         
+Res_5.Jul2          .           500.0000       500.0000         0.0020      
+Res_5.Aug2          .           500.0000       500.0000         EPS         
+Res_5.Sep2          .           500.0000       500.0000         EPS         
+Res_5.Oct2          .           500.0000       500.0000         EPS         
+Res_5.Nov2          .           500.0000       500.0000         EPS         
+Res_5.Dec2       500.0000       500.0000       500.0000        -0.0020      
+
+                           LOWER          LEVEL          UPPER         MARGINAL
+
+---- VAR obj               -INF           45.7677        +INF             .          
+
+
+**** REPORT SUMMARY :        0     NONOPT
+                             0 INFEASIBLE
+                             0  UNBOUNDED
+GAMS 45.6.0  2eadeefd Jan 4, 2024           DAX-DAC arm 64bit/macOS - 04/18/24 11:59:28 Page 7
+G e n e r a l   A l g e b r a i c   M o d e l i n g   S y s t e m
+E x e c u t i o n
+
+
+**** REPORT FILE SUMMARY
+
+res /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/untitled folder/River2.txt
+
+
+EXECUTION TIME       =        0.039 SECONDS      6 MB  45.6.0 2eadeefd DAX-DAC
+
+
+USER: GAMS Community License for Shamik Misra        G240108|0002AO-GEN
+      Indian Institute of Technology Tirupati, INDIA             CL2254
+      License for teaching and research at degree granting institutions
+
+
+**** FILE SUMMARY
+
+Input      /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/untitled folder/NLP_Part_1.gms
+Output     /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/untitled folder/NLP_Part_1.lst

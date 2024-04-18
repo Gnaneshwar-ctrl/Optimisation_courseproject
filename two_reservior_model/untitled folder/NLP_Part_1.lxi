@@ -1,0 +1,29 @@
+B 3 C o m p i l a t i o n
+B 135 Equation Listing    SOLVE Lakes Using LP From line 114
+D 138 R_no
+D 149 R_ns
+D 160 R_nr
+D 171 R_nl
+D 182 R_nn
+D 193 Objective
+B 199 Column Listing      SOLVE Lakes Using LP From line 114
+E 202 Divert
+E 224 Q
+E 240 R
+E 259 S
+E 278 obj
+B 286 Range Statistics    SOLVE Lakes Using LP From line 114
+B 297 Model Statistics    SOLVE Lakes Using LP From line 114
+B 310 Solution Report     SOLVE Lakes Using LP From line 114
+F 343 R_no
+F 468 R_ns
+F 521 R_nr
+F 598 R_nl
+F 723 R_nn
+F 1090 Objective
+G 1092 Divert
+G 1169 Q
+G 1534 R
+G 1899 S
+G 2026 obj
+B 2034 E x e c u t i o n

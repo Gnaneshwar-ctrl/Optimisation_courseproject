@@ -1,0 +1,75 @@
+
+--- Job NLP_Part_1.gms Start 04/18/24 00:25:17 45.6.0 2eadeefd DAX-DAC arm 64bit/macOS
+--- Applying:
+    /Library/Frameworks/GAMS.framework/Versions/45/Resources/gmsprmun.txt
+    /Users/gnaneshwarsampathirao/Library/Preferences/GAMS/gamsconfig.yaml
+--- GAMS Parameters defined
+    Input /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/NLP_Part_1.gms
+    PageSize 0
+    ScrDir /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/225a/
+    SysDir /Library/Frameworks/GAMS.framework/Versions/45/Resources/
+    LogOption 3
+    ErrMsg 1
+    ErrorLog 99
+    IDE 1
+    LstTitleLeftAligned 1
+Licensee: GAMS Community License for Shamik Misra        G240108|0002AO-GEN
+          Indian Institute of Technology Tirupati, INDIA             CL2254
+          /Users/gnaneshwarsampathirao/Library/Application Support/GAMS/gamslice.txt
+          Shamik Misra, misra@iittp.ac.in                                  
+          Community license for demonstration and instructional purposes only
+Processor information: 1 socket(s), 8 core(s), and 8 thread(s) available
+GAMS 45.6.0   Copyright (C) 1987-2024 GAMS Development. All rights reserved
+--- Starting compilation
+--- NLP_Part_1.gms(111) 3 Mb
+--- Starting execution: elapsed 0:00:00.002
+--- NLP_Part_1.gms(77) 4 Mb
+--- Generating LP model Lakes
+--- NLP_Part_1.gms(101) 4 Mb
+---   289 rows  349 columns  671 non-zeroes
+--- Range statistics (absolute non-zero finite values)
+--- RHS       [min, max] : [ 3.900E+01, 1.000E+03] - Zero values observed as well
+--- Bound     [min, max] : [ 1.300E+01, 1.000E+03] - Zero values observed as well
+--- Matrix    [min, max] : [ 2.000E-03, 1.000E+09]
+--- Executing CPLEX (Solvelink=2): elapsed 0:00:00.099
+
+IBM ILOG CPLEX   45.6.0 2eadeefd Jan 4, 2024           DAC arm 64bit/macOS    
+
+*** This solver runs with a community license. No commercial use.
+--- GMO setup time: 0.00s
+--- Space for names approximately 0.02 Mb
+--- Use option 'names no' to turn use of names off
+--- GMO memory 0.57 Mb (peak 0.58 Mb)
+--- Dictionary memory 0.00 Mb
+--- Cplex 22.1.1.0 link memory 0.01 Mb (peak 0.04 Mb)
+--- Starting Cplex
+
+Version identifier: 22.1.1.0 | 2022-11-28 | 9160aff4d
+CPXPARAM_Advance                                 0
+CPXPARAM_Threads                                 1
+CPXPARAM_MIP_Display                             4
+CPXPARAM_MIP_Pool_Capacity                       0
+CPXPARAM_MIP_Tolerances_AbsMIPGap                0
+Tried aggregator 1 time.
+LP Presolve eliminated 145 rows and 161 columns.
+Aggregator did 100 substitutions.
+Reduced LP has 43 rows, 88 columns, and 152 nonzeros.
+Presolve time = 0.00 sec. (0.23 ticks)
+Initializing dual steep norms . . .
+
+Iteration log . . .
+Iteration:     1   Dual objective     =            22.786000
+
+--- LP status (1): optimal.
+--- Cplex Time: 0.00sec (det. 0.37 ticks)
+
+
+Optimal solution found
+Objective:           21.767700
+
+--- Reading solution for model Lakes
+--- Executing after solve: elapsed 0:00:00.364
+--- NLP_Part_1.gms(111) 5 Mb
+--- Putfile res /Users/gnaneshwarsampathirao/Desktop/IITTP/optimization_teq/Project/two_reservior_model/River2.txt
+*** Status: Normal completion
+--- Job NLP_Part_1.gms Stop 04/18/24 00:25:18 elapsed 0:00:00.365

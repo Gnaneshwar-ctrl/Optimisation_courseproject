@@ -1,0 +1,35 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Your data
+time_periods = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12']
+storage = [13723.26, 12728.83, 11762.29, 11502.47, 12894.05, 15837.78, 17503.44, 17838.17, 18118.57, 17838.75, 17239.00, 16172.46]
+input_flow = [426.00, 399.00, 523.00, 875.00, 2026.00, 3626.00, 2841.00, 1469.00, 821.00, 600.00, 458.00, 413.00]
+release_flow = [1699.50, 1388.20, 1477.60, 1109.40, 594.60, 636.60, 1126.10, 1092.00, 510.80, 868.50, 1049.80, 1475.50]
+demand = [1699.50, 1388.20, 1477.60, 1109.40, 594.60, 636.60, 1126.10, 1092.00, 510.80, 868.50, 1049.80, 1475.50]
+
+# Create a DataFrame
+data = pd.DataFrame({'Time Periods': time_periods,
+                     'Storage': storage,
+                     'Input Flow': input_flow,
+                     'Release Flow': release_flow,
+                     'Demand': demand})
+
+# Plotting
+plt.figure(figsize=(10, 6))
+
+plt.plot(data['Time Periods'], data['Input Flow'], marker='o', label='Input Flow')
+plt.plot(data['Time Periods'], data['Release Flow'], marker='o', label='Release Flow')
+plt.plot(data['Time Periods'], data['Demand'], marker='o', label='Demand')
+plt.plot(data['Time Periods'], data['Storage'], marker='o', label='Storage')
+
+plt.title('Flows Over Time Periods')
+plt.xlabel('Time Periods')
+plt.ylabel('Volume')
+plt.xticks(rotation=45)
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+
+plt.show()
+
